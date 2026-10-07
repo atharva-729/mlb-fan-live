@@ -1,0 +1,9 @@
+# Player nickname -> MLB person ID ("Sho", "Vladdy", "Doc"). Filled in Phase 2,
+# from the game's rosters.
+#
+# Example shape:
+#
+# nicknames:
+#   "<nickname>": <mlb person id>
+
+nicknames: {}

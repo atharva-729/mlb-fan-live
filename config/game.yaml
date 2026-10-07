@@ -1,0 +1,45 @@
+# The one game this project replays: 2025 World Series Game 1, Dodgers @ Blue Jays.
+
+game:
+  label: "WS 2025 Game 1"
+  date: "2025-10-24"            # official date; first pitch is about 00:00 UTC Oct 25
+  game_type: W
+  # Looked up from the MLB schedule, never guessed:
+  #   fanpulse-live find-game --date 2025-10-24 --home "Blue Jays" --away Dodgers --game-type W
+  game_pk: 813027
+  youtube_video_id: 6BrK9Ep5M6o
+
+teams:
+  home: {abbr: TOR, name: Blue Jays}
+  away: {abbr: LAD, name: Dodgers}
+
+# Reddit threads, pulled by ID from Arctic Shift. expected_comments is Reddit's
+# count when the threads were picked; some loss to deletions is normal.
+threads:
+  - {id: 1ofc2dw, subreddit: baseball,        type: game,     bot: BaseballBot,      expected_comments: 18963}
+  - {id: 1ofc23n, subreddit: Dodgers,         type: game,     bot: DodgerBot,        expected_comments: 16446}
+  - {id: 1of9auu, subreddit: Torontobluejays, type: game,     bot: BlueJaysBaseball, expected_comments: 14720}
+  - {id: 1ofhelr, subreddit: baseball,        type: postgame, bot: null,             expected_comments: 934}
+  - {id: 1ofheap, subreddit: Dodgers,         type: postgame, bot: DodgerBot,        expected_comments: 758}
+  - {id: 1ofhdzh, subreddit: Torontobluejays, type: postgame, bot: null,             expected_comments: 945}
+
+# Fanbases. r/baseball is mixed, so it is split by author flair.
+streams:
+  - {id: "r/Dodgers",            subreddit: Dodgers,         flair: null,    team: LAD}
+  - {id: "r/Torontobluejays",    subreddit: Torontobluejays, flair: null,    team: TOR}
+  - {id: "r/baseball:LAD-flair", subreddit: baseball,        flair: LAD,     team: LAD}
+  - {id: "r/baseball:TOR-flair", subreddit: baseball,        flair: TOR,     team: TOR}
+  - {id: "r/baseball:neutral",   subreddit: baseball,        flair: neutral, team: null}
+
+# author_flair_text substrings that mark a fanbase in r/baseball.
+# Checked against the real flair values in Phase 1.
+flairs:
+  LAD: ["Dodgers"]
+  TOR: ["Blue Jays"]
+
+tick:
+  update_every_s: 5      # how often Jev runs and the dashboard refreshes
+  window_s: 20           # how far back each call looks
+  min_comments: 8        # below this, widen the window...
+  max_window_s: 60       # ...up to this, then skip and carry the last value (stale)
+  play_lookback_s: 90    # plays ended within this long are listed in the state; set from measured lag in Phase 1
