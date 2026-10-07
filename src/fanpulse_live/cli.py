@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import logging
 import sys
+from pathlib import Path
 from typing import Sequence
 
 from fanpulse_live import __version__
@@ -41,6 +42,12 @@ def build_parser() -> argparse.ArgumentParser:
         choices=["arctic-shift", "pullpush"],
         default="arctic-shift",
         help="archive to pull comments from; pullpush copes with big threads when Arctic Shift times out",
+    )
+    pull.add_argument(
+        "--dump",
+        nargs="+",
+        metavar="FILE",
+        help="read comments from local Reddit dump files (.zst) instead of an archive API",
     )
     pull.set_defaults(func=cmd_pull)
 
@@ -173,7 +180,19 @@ def cmd_pull(args: argparse.Namespace) -> int:
     game, plays = game_tables["games"].iloc[0], game_tables["plays"]
     first_pitch, final_out = mlb.game_window(plays, game_tables["play_events"])
 
-    reddit_tables = _pull_reddit(game_pk, loaded["threads"], keep_trying=args.keep_trying, source=args.source)
+    if args.dump:
+        fetched: dict[str, int] = {}
+
+        def on_progress(thread_id: str, count: int) -> None:
+            fetched[thread_id] = count
+            _write_pull_progress(loaded["threads"], fetched, "reading dump files")
+
+        reddit_tables = reddit.ingest_dump(game_pk, loaded["threads"], [Path(p) for p in args.dump], on_progress)
+        _write_pull_progress(loaded["threads"], fetched, "done")
+    else:
+        reddit_tables = _pull_reddit(
+            game_pk, loaded["threads"], keep_trying=args.keep_trying, source=args.source
+        )
     threads, raw = reddit_tables["threads"], reddit_tables["comments_raw"]
 
     comments, dropped = clean.clean_comments(raw)

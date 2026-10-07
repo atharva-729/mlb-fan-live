@@ -85,6 +85,30 @@ def test_fetch_comments_pages_an_archive_whose_after_is_inclusive(monkeypatch):
     assert all(url == reddit.PULLPUSH.url and trim and spacing == 3.0 for url, _, trim, spacing in calls)
 
 
+def test_read_dump_comments_streams_only_the_wanted_threads(tmp_path):
+    import json
+
+    import zstandard
+
+    lines = [
+        {"id": "b", "link_id": "t3_gt", "created_utc": "20", "body": "second"},
+        {"id": "x", "link_id": "t3_other", "created_utc": 5, "body": "another thread"},
+        {"id": "a", "link_id": "t3_gt", "created_utc": 10, "body": "first"},
+        # Mentions a wanted thread id in its text but belongs to another thread.
+        {"id": "y", "link_id": "t3_other", "created_utc": 6, "body": "see t3_gt"},
+        {"id": "c", "link_id": "t3_pg", "created_utc": 30, "body": "postgame"},
+    ]
+    path = tmp_path / "baseball_comments.zst"
+    path.write_bytes(zstandard.ZstdCompressor().compress("\n".join(json.dumps(l) for l in lines).encode() + b"\n"))
+    progress = []
+
+    found = reddit.read_dump_comments([path], ["gt", "pg"], lambda thread_id, n: progress.append((thread_id, n)))
+
+    assert [c["id"] for c in found["gt"]] == ["a", "b"]  # oldest first, string timestamps handled
+    assert [c["id"] for c in found["pg"]] == ["c"]
+    assert progress == [("gt", 2), ("pg", 1)]
+
+
 def test_trim_keeps_only_the_fields_we_store():
     response = {"data": [{"id": "a", "body": "hi", "author": "fan", "all_awardings": [], "permalink": "/r/x"}]}
 

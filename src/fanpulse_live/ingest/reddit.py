@@ -14,6 +14,7 @@ from __future__ import annotations
 import logging
 import time
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Callable
 
 import pandas as pd
@@ -190,6 +191,72 @@ def fetch_comments(
         log.debug("thread %s: %d comments so far", thread_id, len(seen))
 
     return sorted(seen.values(), key=lambda c: (c["created_utc"], c["id"]))
+
+
+def read_dump_comments(
+    paths: list[Path], thread_ids: list[str], on_match: Callable[[str, int], None] | None = None
+) -> dict[str, list[dict]]:
+    """Comments for the given threads out of Reddit dump files, by thread id.
+
+    The files are the zstandard-compressed, one-JSON-object-per-line dumps
+    published per subreddit or per month (``baseball_comments.zst``,
+    ``RC_2025-10.zst``). They are streamed, never loaded whole. ``on_match`` is
+    called now and then with a thread id and its comment count so far.
+    """
+    import io
+    import json
+
+    import zstandard
+
+    needles = {f"t3_{thread_id}".encode(): thread_id for thread_id in thread_ids}
+    found: dict[str, dict[str, dict]] = {thread_id: {} for thread_id in thread_ids}
+
+    for path in paths:
+        log.info("reading %s", path)
+        with open(path, "rb") as handle:
+            # The dumps are written with a long window; the default decoder limit rejects them.
+            reader = zstandard.ZstdDecompressor(max_window_size=2**31).stream_reader(handle)
+            for line in io.BufferedReader(reader, buffer_size=2**24):
+                # A cheap byte search rules out nearly every line before any JSON is parsed.
+                if not any(needle in line for needle in needles):
+                    continue
+                comment = json.loads(line)
+                thread_id = needles.get(str(comment.get("link_id", "")).encode())
+                if thread_id is None:
+                    continue
+                comment["created_utc"] = int(comment["created_utc"])
+                found[thread_id][comment["id"]] = comment
+                if on_match is not None and len(found[thread_id]) % 500 == 0:
+                    on_match(thread_id, len(found[thread_id]))
+
+    for thread_id, comments in found.items():
+        if on_match is not None:
+            on_match(thread_id, len(comments))
+    return {
+        thread_id: sorted(comments.values(), key=lambda c: (c["created_utc"], c["id"]))
+        for thread_id, comments in found.items()
+    }
+
+
+def ingest_dump(
+    game_pk: int,
+    threads: list[dict],
+    paths: list[Path],
+    on_progress: Callable[[str, int], None] | None = None,
+) -> dict[str, pd.DataFrame]:
+    """Like ``ingest_threads``, with the comments read from local dump files instead of an API."""
+    posts = fetch_threads_by_id([t["id"] for t in threads])
+    by_thread = read_dump_comments(paths, [p["id"] for p in posts], on_progress)
+
+    tables = {
+        "threads": build_threads(posts, threads, game_pk),
+        "comments_raw": pd.concat(
+            [build_comments(by_thread[p["id"]], p["id"], p["subreddit"]) for p in posts], ignore_index=True
+        ),
+    }
+    for name, table in tables.items():
+        storage.write_table(name, game_pk, table)
+    return tables
 
 
 def build_threads(posts: list[dict], threads: list[dict], game_pk: int) -> pd.DataFrame:
