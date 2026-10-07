@@ -1,0 +1,164 @@
+:root {
+  color-scheme: light;
+  --page: #f9f9f7;
+  --surface: #fcfcfb;
+  --ink: #0b0b0b;
+  --ink-2: #52514e;
+  --muted: #898781;
+  --grid: #e1e0d9;
+  --axis: #c3c2b7;
+  --border: rgba(11, 11, 11, 0.10);
+  --accent: #2a78d6;
+  --neutral-mid: #d9d8d2;
+  --pos: #2a78d6;
+  --neg: #e34948;
+  --series-1: #2a78d6;
+  --series-2: #eb6834;
+  --series-3: #1baf7a;
+  --series-4: #eda100;
+  --series-5: #e87ba4;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+    --page: #0d0d0d;
+    --surface: #1a1a19;
+    --ink: #ffffff;
+    --ink-2: #c3c2b7;
+    --muted: #898781;
+    --grid: #2c2c2a;
+    --axis: #383835;
+    --border: rgba(255, 255, 255, 0.10);
+    --accent: #3987e5;
+    --neutral-mid: #4a4a46;
+    --pos: #3987e5;
+    --neg: #e66767;
+    --series-1: #3987e5;
+    --series-2: #d95926;
+    --series-3: #199e70;
+    --series-4: #c98500;
+    --series-5: #d55181;
+  }
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--page);
+  color: var(--ink);
+  font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+h1 { font-size: 18px; margin: 0; }
+h2 { font-size: 12px; margin: 0 0 10px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); font-weight: 600; }
+h2 .muted { text-transform: none; letter-spacing: 0; font-weight: 400; }
+.muted { color: var(--muted); }
+
+.top {
+  display: flex; flex-wrap: wrap; gap: 12px 24px; align-items: center; justify-content: space-between;
+  padding: 12px 16px; background: var(--surface); border-bottom: 1px solid var(--border);
+}
+.brand { display: flex; gap: 12px; align-items: baseline; flex-wrap: wrap; }
+.source { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+
+.error { margin: 16px; padding: 12px 16px; border: 1px solid var(--neg); border-radius: 8px; background: var(--surface); }
+
+.layout { display: grid; grid-template-columns: minmax(360px, 5fr) minmax(0, 8fr); gap: 16px; padding: 16px; align-items: start; }
+.left, .right { display: grid; gap: 16px; min-width: 0; }
+.split { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: 16px; align-items: start; }
+
+@media (max-width: 1100px) {
+  .layout, .split { grid-template-columns: minmax(0, 1fr); }
+}
+
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; min-width: 0; }
+
+button, select {
+  font: inherit; color: var(--ink); background: var(--surface);
+  border: 1px solid var(--axis); border-radius: 6px; padding: 5px 10px; cursor: pointer;
+}
+button:hover, select:hover { border-color: var(--accent); }
+button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+button.primary { background: var(--accent); border-color: var(--accent); color: #ffffff; min-width: 68px; }
+
+/* Video. Nothing is ever drawn over the player. */
+.video-card { padding: 0; overflow: hidden; }
+.video { position: relative; width: 100%; aspect-ratio: 16 / 9; min-height: 270px; background: #000; }
+.video iframe, .video > div { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+.note { margin: 0; padding: 8px 14px; color: var(--muted); font-size: 12.5px; }
+.note:empty { display: none; }
+
+.transport { display: grid; gap: 10px; }
+.transport-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.inline { display: inline-flex; gap: 6px; align-items: center; color: var(--ink-2); }
+.check { font-size: 13px; }
+.clock { margin-left: auto; font-variant-numeric: tabular-nums; color: var(--ink-2); }
+input[type=range] { width: 100%; accent-color: var(--accent); }
+
+/* Scoreboard */
+.scoreboard { display: flex; flex-wrap: wrap; gap: 14px 28px; align-items: center; }
+.teams { display: grid; gap: 2px; min-width: 150px; }
+.team-row { display: flex; justify-content: space-between; gap: 16px; font-size: 17px; }
+.team-row .runs { font-weight: 700; font-variant-numeric: tabular-nums; }
+.team-row.leading .name { font-weight: 700; }
+.situation { display: grid; gap: 2px; }
+.situation .inning { font-size: 16px; font-weight: 600; }
+.diamond { position: relative; width: 44px; height: 44px; }
+.diamond .base { position: absolute; width: 14px; height: 14px; transform: rotate(45deg); border: 1.5px solid var(--axis); background: transparent; }
+.diamond .base.on { background: var(--series-4); border-color: var(--series-4); }
+.diamond .b1 { right: 2px; top: 15px; }
+.diamond .b2 { left: 15px; top: 2px; }
+.diamond .b3 { left: 2px; top: 15px; }
+.outs { display: flex; gap: 4px; align-items: center; color: var(--ink-2); }
+.outs .dot { width: 9px; height: 9px; border-radius: 50%; border: 1.5px solid var(--axis); }
+.outs .dot.on { background: var(--ink-2); border-color: var(--ink-2); }
+.matchup { display: grid; gap: 2px; color: var(--ink-2); min-width: 0; }
+.matchup b { color: var(--ink); font-weight: 600; }
+.wp { flex: 1 1 200px; min-width: 180px; display: grid; gap: 4px; }
+.wp-bar { display: flex; height: 10px; border-radius: 5px; overflow: hidden; gap: 2px; background: var(--surface); }
+.wp-bar span { display: block; height: 100%; }
+.wp-labels { display: flex; justify-content: space-between; font-size: 12.5px; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+
+/* Pulse chart */
+.pulse { width: 100%; height: 380px; }
+.legend { display: flex; flex-wrap: wrap; gap: 4px 16px; margin-bottom: 4px; font-size: 12.5px; color: var(--ink-2); }
+.legend .key { display: inline-flex; align-items: center; gap: 6px; }
+.swatch { width: 14px; height: 3px; border-radius: 2px; display: inline-block; }
+.dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; flex: none; }
+
+/* Comments */
+.tabs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+.tabs button { padding: 3px 9px; font-size: 12.5px; display: inline-flex; gap: 6px; align-items: center; }
+.tabs button[aria-selected=true] { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.comments { display: grid; gap: 2px; max-height: 520px; overflow-y: auto; }
+.comment { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 2px 8px; padding: 6px 4px; border-bottom: 1px solid var(--grid); }
+.comment .when { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; padding-top: 1px; }
+.comment .text { overflow-wrap: anywhere; }
+.comment .meta { grid-column: 2; display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: 12px; color: var(--ink-2); }
+.chip { display: inline-flex; align-items: center; gap: 5px; }
+.empty { color: var(--muted); padding: 8px 0; }
+
+/* Who's being talked about */
+.subjects { display: grid; gap: 6px; }
+.subject { display: grid; grid-template-columns: minmax(90px, 9fr) minmax(0, 10fr) auto; gap: 8px; align-items: center; padding: 3px 4px; border: 1px solid transparent; border-radius: 6px; background: none; text-align: left; width: 100%; }
+.subject:hover { border-color: var(--axis); }
+.subject[aria-pressed=true] { border-color: var(--accent); }
+.subject .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.subject .track { height: 10px; }
+.subject .bar { display: block; height: 10px; border-radius: 0 4px 4px 0; min-width: 3px; }
+.subject .num { font-variant-numeric: tabular-nums; color: var(--ink-2); font-size: 12.5px; white-space: nowrap; }
+.player-card { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--grid); display: grid; gap: 4px; }
+.player-card:empty { display: none; }
+.player-card .who { font-weight: 600; font-size: 15px; }
+.player-card .line { color: var(--ink-2); }
+.player-card .line b { color: var(--ink); font-weight: 600; font-variant-numeric: tabular-nums; }
+
+/* Moments */
+.moments { display: grid; gap: 8px; max-height: 460px; overflow-y: auto; }
+.moment { display: grid; gap: 4px; text-align: left; width: 100%; padding: 9px 11px; border-radius: 8px; }
+.moment .head { display: flex; gap: 8px; justify-content: space-between; color: var(--ink-2); font-size: 12.5px; }
+.moment .play { font-weight: 600; }
+.moment .fan { display: flex; gap: 6px; align-items: baseline; color: var(--ink-2); font-size: 13px; }
+.moment .fan .dot { transform: translateY(-1px); }

@@ -47,6 +47,10 @@ class JevError(RuntimeError):
     pass
 
 
+class CacheMiss(JevError):
+    """Raised by ``ask(..., cached_only=True)`` when the answer has not been paid for yet."""
+
+
 def model() -> str:
     return os.getenv("JEV_MODEL") or DEFAULT_MODEL
 
@@ -103,18 +107,22 @@ def ask(
     *,
     model_id: str | None = None,
     session: requests.Session | None = None,
+    cached_only: bool = False,
 ) -> dict:
     """Answer ``questions`` about ``state``.
 
     Returns the API response (``answers``, ``usage``, ...) plus ``latency_s``
     and ``cached``. A cached response keeps the latency of the call that paid
-    for it.
+    for it. With ``cached_only`` nothing is sent: an answer not already in
+    the cache raises ``CacheMiss``.
     """
     model_id = model_id or model()
     key = request_hash(state, questions, model_id)
     path = cache_path(key)
     if path.exists():
         return {**json.loads(path.read_text(encoding="utf-8")), "cached": True}
+    if cached_only:
+        raise CacheMiss(key)
 
     session = session or _get_session()
     headers = {"Authorization": f"Bearer {_api_key()}", "Content-Type": "application/json"}
