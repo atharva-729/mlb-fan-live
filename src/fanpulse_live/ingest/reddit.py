@@ -26,6 +26,9 @@ log = logging.getLogger(__name__)
 BASE_URL = "https://arctic-shift.photon-reddit.com"
 
 PAGE_SIZE = 100
+# Longest stretch of one subreddit asked for at once. Five minutes of a game
+# thread comes back in 2-3 seconds; thirty minutes times out.
+WINDOW_SECONDS = 300
 REQUEST_SPACING_SECONDS = 1.0
 # Arctic Shift answers 422 ("Timeout. Maybe slow down a bit") when a query times
 # out on its side, with an X-RateLimit-Reset header saying when its per-minute
@@ -191,6 +194,93 @@ def fetch_comments(
         log.debug("thread %s: %d comments so far", thread_id, len(seen))
 
     return sorted(seen.values(), key=lambda c: (c["created_utc"], c["id"]))
+
+
+def fetch_subreddit_comments(
+    subreddit: str, start_utc: int, end_utc: int, on_page: Callable[[list[dict]], None] | None = None
+) -> list[dict]:
+    """Every comment in a subreddit from ``start_utc`` up to ``end_utc``, oldest first.
+
+    Arctic Shift times out when asked for a whole thread with many thousands
+    of comments, or for a long stretch of a busy subreddit, but answers a
+    subreddit over a few minutes. So this walks the span in short windows and
+    pages within each. ``on_page`` is called with each page's new comments.
+    """
+    settled = _is_settled(end_utc)
+    seen: dict[str, dict] = {}
+
+    for window_start in range(start_utc, end_utc, WINDOW_SECONDS):
+        before = min(window_start + WINDOW_SECONDS, end_utc)
+        after = window_start - 1  # ``after`` excludes its own second
+        while True:
+            params = {
+                "subreddit": subreddit,
+                "after": after,
+                "before": before,
+                "sort": "asc",
+                "limit": PAGE_SIZE,
+                "fields": COMMENT_FIELDS,
+            }
+            page = _get(ARCTIC_SHIFT.url, params, settled=settled)
+            new = [c for c in page if c["id"] not in seen]
+            for comment in new:
+                seen[comment["id"]] = comment
+            if on_page is not None:
+                on_page(new)
+            if len(page) < PAGE_SIZE:
+                break
+            last = int(page[-1]["created_utc"])
+            if not new:
+                log.warning("r/%s: more than %d comments at second %d", subreddit, PAGE_SIZE, last)
+            after = last - 1 if new else last
+
+    return sorted(seen.values(), key=lambda c: (c["created_utc"], c["id"]))
+
+
+def ingest_threads_by_window(
+    game_pk: int,
+    threads: list[dict],
+    end_utc: int,
+    on_progress: Callable[[str, int], None] | None = None,
+) -> dict[str, pd.DataFrame]:
+    """Like ``ingest_threads``, reaching the big game threads through their subreddits.
+
+    Each game thread is read out of its subreddit's comments from the
+    thread's creation to ``end_utc``; comments posted to it after that are not
+    fetched. Postgame threads are small enough to fetch whole.
+    """
+    posts = fetch_threads_by_id([t["id"] for t in threads])
+    types = {t["id"]: t["type"] for t in threads}
+    by_thread: dict[str, list[dict]] = {}
+
+    for post in posts:
+        thread_id = post["id"]
+        if types[thread_id] != "game":
+            on_page = None if on_progress is None else (lambda n, tid=thread_id: on_progress(tid, n))
+            by_thread[thread_id] = fetch_comments(thread_id, post["created_utc"], on_page)
+            continue
+
+        link_id, count = f"t3_{thread_id}", 0
+
+        def on_window_page(new: list[dict]) -> None:
+            nonlocal count
+            count += sum(c.get("link_id") == link_id for c in new)
+            if on_progress is not None:
+                on_progress(thread_id, count)
+
+        in_subreddit = fetch_subreddit_comments(post["subreddit"], int(post["created_utc"]), end_utc, on_window_page)
+        by_thread[thread_id] = [c for c in in_subreddit if c.get("link_id") == link_id]
+        log.info("r/%s thread %s: %d comments", post["subreddit"], thread_id, len(by_thread[thread_id]))
+
+    tables = {
+        "threads": build_threads(posts, threads, game_pk),
+        "comments_raw": pd.concat(
+            [build_comments(by_thread[p["id"]], p["id"], p["subreddit"]) for p in posts], ignore_index=True
+        ),
+    }
+    for name, table in tables.items():
+        storage.write_table(name, game_pk, table)
+    return tables
 
 
 def read_dump_comments(

@@ -39,9 +39,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     pull.add_argument(
         "--source",
-        choices=["arctic-shift", "pullpush"],
-        default="arctic-shift",
-        help="archive to pull comments from; pullpush copes with big threads when Arctic Shift times out",
+        choices=["arctic-shift-windows", "arctic-shift", "pullpush"],
+        default="arctic-shift-windows",
+        help="how to pull comments: arctic-shift-windows reads game threads out of their subreddits in "
+        "short time windows (works when whole-thread searches time out) and stops an hour after the "
+        "final out; arctic-shift and pullpush search each thread whole",
     )
     pull.add_argument(
         "--dump",
@@ -101,6 +103,8 @@ def cmd_show_config(args: argparse.Namespace) -> int:
 
 
 PULL_RETRY_WAIT_SECONDS = 120
+# How long after the final out a game thread is still read when pulling by time window.
+GAME_THREAD_TAIL_SECONDS = 3600
 
 
 def _write_pull_progress(threads: list[dict], fetched: dict[str, int], status: str) -> None:
@@ -134,7 +138,7 @@ def _write_pull_progress(threads: list[dict], fetched: dict[str, int], status: s
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
-def _pull_reddit(game_pk: int, threads: list[dict], *, keep_trying: bool, source: str) -> dict:
+def _pull_reddit(game_pk: int, threads: list[dict], *, keep_trying: bool, source: str, end_utc: int) -> dict:
     """Pull the threads, keeping ``data/pull_progress.md`` current.
 
     The archives have spells where they answer nothing. With ``keep_trying``
@@ -154,7 +158,10 @@ def _pull_reddit(game_pk: int, threads: list[dict], *, keep_trying: bool, source
 
     while True:
         try:
-            tables = reddit.ingest_threads(game_pk, threads, on_progress, reddit.SOURCES[source])
+            if source == "arctic-shift-windows":
+                tables = reddit.ingest_threads_by_window(game_pk, threads, end_utc, on_progress)
+            else:
+                tables = reddit.ingest_threads(game_pk, threads, on_progress, reddit.SOURCES[source])
         except http.HttpError as exc:
             if not keep_trying:
                 _write_pull_progress(threads, fetched, f"stopped: {str(exc)[-60:]}")
@@ -191,7 +198,11 @@ def cmd_pull(args: argparse.Namespace) -> int:
         _write_pull_progress(loaded["threads"], fetched, "done")
     else:
         reddit_tables = _pull_reddit(
-            game_pk, loaded["threads"], keep_trying=args.keep_trying, source=args.source
+            game_pk,
+            loaded["threads"],
+            keep_trying=args.keep_trying,
+            source=args.source,
+            end_utc=int(final_out.timestamp()) + GAME_THREAD_TAIL_SECONDS,
         )
     threads, raw = reddit_tables["threads"], reddit_tables["comments_raw"]
 
