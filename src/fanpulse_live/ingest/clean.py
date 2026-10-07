@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import html
 import re
 
 import pandas as pd
@@ -14,6 +15,24 @@ DELETED_BODIES = {"[deleted]", "[removed]"}
 MEDIA_EMBED = re.compile(r"!\[(?:gif|img)\]\([^)]*\)")
 
 REASONS = ("deleted", "bot", "empty", "media_only")
+
+MARKDOWN_LINK = re.compile(r"\[([^\]]*)\]\((?:https?://|/)[^)]*\)")
+URL = re.compile(r"https?://\S+")
+QUOTE_OR_HEADING = re.compile(r"^\s*(?:>+|#+)\s*", re.MULTILINE)
+EMPHASIS = re.compile(r"(\*\*|__|~~|\*|`|\^)")
+WHITESPACE = re.compile(r"\s+")
+
+
+def clean_text(body: str, limit: int = 300) -> str:
+    """Comment text as a model should read it: one line, no markup, links and gifs as tokens."""
+    text = html.unescape(body)
+    text = MEDIA_EMBED.sub(" [gif] ", text)
+    text = MARKDOWN_LINK.sub(lambda m: m.group(1) or "[link]", text)
+    text = URL.sub("[link]", text)
+    text = QUOTE_OR_HEADING.sub("", text)
+    text = EMPHASIS.sub("", text)
+    text = WHITESPACE.sub(" ", text).strip()
+    return text if len(text) <= limit else text[: limit - 1].rstrip() + "…"
 
 
 def drop_reason(author: str | None, body: str | None) -> str | None:
