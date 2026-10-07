@@ -69,6 +69,14 @@ def build_parser() -> argparse.ArgumentParser:
     sheet.add_argument("--per-stream", type=int, default=8, help="windows per stream (default 8, so 40 in all)")
     sheet.set_defaults(func=cmd_label_sheet)
 
+    evaluate = subparsers.add_parser("evaluate", help="score Jev against the hand labels")
+    evaluate.set_defaults(func=cmd_evaluate)
+
+    ticks = subparsers.add_parser("ticks", help="run every update of the game through Jev (resumable)")
+    ticks.add_argument("--max-cost", type=float, default=8.0, help="stop once this run has spent this many dollars")
+    ticks.add_argument("--limit", type=int, help="only the first N updates, for a trial run")
+    ticks.set_defaults(func=cmd_ticks)
+
     return parser
 
 
@@ -462,6 +470,110 @@ def cmd_label_sheet(args: argparse.Namespace) -> int:
     print(f"  comments per window: median {sizes[len(sizes) // 2]}, largest {sizes[-1]}")
     print(f"\nOpen this in a browser: {page}")
     print(f"When done, save the downloaded labels.json into {directory}")
+    return 0
+
+
+def cmd_evaluate(args: argparse.Namespace) -> int:
+    import json
+
+    from fanpulse_live import config, gamestate
+    from fanpulse_live.analysis import evaluate, labelling
+    from fanpulse_live.jev import client, questions
+    from fanpulse_live.viz import charts
+
+    directory = config.data_dir() / "labels"
+    try:
+        items = json.loads((directory / "sample.json").read_text(encoding="utf-8"))
+        labels = labelling.load_labels(directory / "labels.json")
+    except FileNotFoundError as exc:
+        print(f"missing {exc.filename}; run `label-sheet`, label the page and save labels.json there", file=sys.stderr)
+        return 1
+
+    subjects = questions.subject_options(gamestate.load_timeline(config.load_game()["game"]["game_pk"]))
+    before = client.usage_summary()
+    answers = {item["id"]: evaluate.ask_item(item, subjects) for item in items}
+    after = client.usage_summary()
+    spent = {
+        "calls": after["calls"] - before["calls"],
+        "input_tokens": after["input_tokens"] - before["input_tokens"],
+        "cost": after["cost"] - before["cost"],
+        "median_latency_s": after["median_latency_s"],
+    }
+
+    text = evaluate.report(evaluate.compare(items, labels, answers), spent)
+    path = charts.reports_dir() / "phase2_eval.md"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8")
+    print(text)
+    print(f"Saved: {path}")
+    return 0
+
+
+def cmd_ticks(args: argparse.Namespace) -> int:
+    import time
+    from datetime import datetime
+
+    from fanpulse_live import config, gamestate, storage
+    from fanpulse_live.engine import ticks, window
+    from fanpulse_live.jev import client
+
+    loaded = config.load_game()
+    game_pk = loaded["game"]["game_pk"]
+    tables = _load_tables(game_pk, ("comments", "comments_raw"))
+    if tables is None:
+        return 1
+
+    timeline = gamestate.load_timeline(game_pk)
+    step = loaded["tick"]["update_every_s"]
+    times = ticks.tick_times(timeline, step)
+    if args.limit:
+        times = times[: args.limit]
+    progress_path = config.data_dir() / "ticks_progress.md"
+    started = time.time()
+
+    def write_progress(status: str, done: int = 0, total: int = 0, cost: float = 0.0, paid: int = 0) -> None:
+        share = f"{done / total:.0%}" if total else "0%"
+        progress_path.write_text(
+            "# Tick run progress\n\n"
+            f"Updated {datetime.now():%Y-%m-%d %H:%M:%S}\n\n"
+            f"**{done:,} of {total:,} (update, stream) pairs ({share})**\n\n"
+            f"Status: {status}\n\n"
+            f"Paid Jev calls this run: {paid:,}; spent ${cost:.4f}; elapsed {(time.time() - started) / 60:.1f} min\n",
+            encoding="utf-8",
+        )
+
+    write_progress("starting")
+    try:
+        tick_table, tags, totals = ticks.run_game(
+            timeline,
+            tables["comments"],
+            window.parent_bodies(tables["comments_raw"]),
+            loaded,
+            max_cost=args.max_cost,
+            on_progress=lambda done, total, cost, paid: write_progress("running", done, total, cost, paid),
+            times=times,
+        )
+    except (ticks.CostLimitReached, client.JevError) as exc:
+        write_progress(f"stopped: {str(exc)[:200]}")
+        print(f"stopped: {exc}", file=sys.stderr)
+        return 1
+
+    storage.write_table("ticks", game_pk, tick_table)
+    storage.write_table("comment_tags", game_pk, tags)
+    storage.write_table("volume", game_pk, ticks.volume_buckets(tables["comments"], times, step))
+
+    minutes = (time.time() - started) / 60
+    write_progress("done", len(tick_table), len(tick_table), totals["cost"], totals["paid_calls"])
+    print(f"{len(times):,} updates x {len(loaded['streams'])} streams = {len(tick_table):,} readings in {minutes:.1f} min")
+    print(f"Paid Jev calls this run: {totals['paid_calls']:,}; {totals['input_tokens']:,} input tokens; ${totals['cost']:.4f}")
+    print(f"Comments tagged: {len(tags):,}\n")
+    print(f"{'stream':<24}{'readings':>9}{'stale':>8}{'widened':>9}{'stale %':>9}{'widened %':>11}")
+    for stream, group in tick_table.groupby("stream"):
+        stale = int(group["stale"].sum())
+        widened = int(((group["window_used_s"] > loaded["tick"]["window_s"]) & ~group["stale"]).sum())
+        print(
+            f"{stream:<24}{len(group):>9}{stale:>8}{widened:>9}{stale / len(group):>9.0%}{widened / len(group):>11.0%}"
+        )
     return 0
 
 
