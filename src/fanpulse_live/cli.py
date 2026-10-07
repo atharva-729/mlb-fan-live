@@ -65,6 +65,10 @@ def build_parser() -> argparse.ArgumentParser:
     state.add_argument("--ask", action="store_true", help="also send it to Jev and print the answers")
     state.set_defaults(func=cmd_state)
 
+    sheet = subparsers.add_parser("label-sheet", help="draw the windows to hand-label and write the labelling page")
+    sheet.add_argument("--per-stream", type=int, default=8, help="windows per stream (default 8, so 40 in all)")
+    sheet.set_defaults(func=cmd_label_sheet)
+
     return parser
 
 
@@ -411,6 +415,53 @@ def cmd_state(args: argparse.Namespace) -> int:
                 top = sorted(answer["probabilities"].items(), key=lambda kv: -kv[1])[:3]
                 ranked = ", ".join(f"{option} {p:.2f}" for option, p in top if p > 0)
                 print(f"  {name:<8} {ranked}")
+    return 0
+
+
+def cmd_label_sheet(args: argparse.Namespace) -> int:
+    from collections import Counter
+
+    from fanpulse_live import config, gamestate
+    from fanpulse_live.analysis import labelling
+    from fanpulse_live.engine import window
+    from fanpulse_live.jev import questions
+
+    loaded = config.load_game()
+    game_pk = loaded["game"]["game_pk"]
+    tables = _load_tables(game_pk, ("comments", "comments_raw"))
+    if tables is None:
+        return 1
+    directory = config.data_dir() / "labels"
+    if (directory / "sample.json").exists():
+        print(
+            f"{directory / 'sample.json'} already exists. Labels refer to that sample, so it is not redrawn; "
+            f"delete the folder to start over.",
+            file=sys.stderr,
+        )
+        return 1
+
+    timeline = gamestate.load_timeline(game_pk)
+    subjects = questions.subject_options(timeline)
+    items = labelling.draw_sample(
+        timeline,
+        tables["comments"],
+        window.parent_bodies(tables["comments_raw"]),
+        subjects,
+        loaded,
+        per_stream=args.per_stream,
+        busy_per_stream=args.per_stream // 2,
+    )
+    _, page = labelling.write_labelling_page(items, list(subjects), directory)
+
+    by_stream = Counter(item["stream"] for item in items)
+    by_kind = Counter(item["kind"] for item in items)
+    sizes = sorted(len(item["state"]["comments"]) for item in items)
+    print(f"{len(items)} windows, {sum(len(item['label_comments']) for item in items)} comments to label")
+    print("  per stream: " + ", ".join(f"{stream} {count}" for stream, count in by_stream.items()))
+    print("  " + ", ".join(f"{count} {kind}" for kind, count in by_kind.items()))
+    print(f"  comments per window: median {sizes[len(sizes) // 2]}, largest {sizes[-1]}")
+    print(f"\nOpen this in a browser: {page}")
+    print(f"When done, save the downloaded labels.json into {directory}")
     return 0
 
 
