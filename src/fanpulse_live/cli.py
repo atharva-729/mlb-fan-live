@@ -36,6 +36,12 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="when Arctic Shift stops answering, wait and resume instead of failing",
     )
+    pull.add_argument(
+        "--source",
+        choices=["arctic-shift", "pullpush"],
+        default="arctic-shift",
+        help="archive to pull comments from; pullpush copes with big threads when Arctic Shift times out",
+    )
     pull.set_defaults(func=cmd_pull)
 
     volume = subparsers.add_parser("volume", help="chart comments per minute by stream against win probability")
@@ -115,11 +121,11 @@ def _write_pull_progress(threads: list[dict], fetched: dict[str, int], status: s
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
-def _pull_reddit(game_pk: int, threads: list[dict], *, keep_trying: bool) -> dict:
+def _pull_reddit(game_pk: int, threads: list[dict], *, keep_trying: bool, source: str) -> dict:
     """Pull the threads, keeping ``data/pull_progress.md`` current.
 
-    Arctic Shift has spells where it answers nothing. With ``keep_trying`` the
-    pull waits and resumes from the cache instead of failing.
+    The archives have spells where they answer nothing. With ``keep_trying``
+    the pull waits and resumes from the cache instead of failing.
     """
     import time
     from datetime import datetime, timedelta
@@ -131,18 +137,18 @@ def _pull_reddit(game_pk: int, threads: list[dict], *, keep_trying: bool) -> dic
 
     def on_progress(thread_id: str, count: int) -> None:
         fetched[thread_id] = count
-        _write_pull_progress(threads, fetched, "pulling")
+        _write_pull_progress(threads, fetched, f"pulling from {source}")
 
     while True:
         try:
-            tables = reddit.ingest_threads(game_pk, threads, on_progress)
+            tables = reddit.ingest_threads(game_pk, threads, on_progress, reddit.SOURCES[source])
         except http.HttpError as exc:
             if not keep_trying:
                 _write_pull_progress(threads, fetched, f"stopped: {str(exc)[-60:]}")
                 raise
             resume_at = datetime.now() + timedelta(seconds=PULL_RETRY_WAIT_SECONDS)
             _write_pull_progress(
-                threads, fetched, f"Arctic Shift is not answering; waiting, next attempt at {resume_at:%H:%M:%S}"
+                threads, fetched, f"{source} is not answering; waiting, next attempt at {resume_at:%H:%M:%S}"
             )
             time.sleep(PULL_RETRY_WAIT_SECONDS)
         else:
@@ -161,7 +167,7 @@ def cmd_pull(args: argparse.Namespace) -> int:
     game, plays = game_tables["games"].iloc[0], game_tables["plays"]
     first_pitch, final_out = mlb.game_window(plays, game_tables["play_events"])
 
-    reddit_tables = _pull_reddit(game_pk, loaded["threads"], keep_trying=args.keep_trying)
+    reddit_tables = _pull_reddit(game_pk, loaded["threads"], keep_trying=args.keep_trying, source=args.source)
     threads, raw = reddit_tables["threads"], reddit_tables["comments_raw"]
 
     comments, dropped = clean.clean_comments(raw)

@@ -22,13 +22,13 @@ def _post(post_id, subreddit, title="a thread"):
 
 def test_fetch_threads_by_id_keeps_config_order(monkeypatch):
     posts = [_post("pg", "Dodgers"), _post("gt", "baseball")]
-    monkeypatch.setattr(reddit, "_get", lambda path, params, *, settled: posts)
+    monkeypatch.setattr(reddit, "_get", lambda url, params, **kwargs: posts)
 
     assert [p["id"] for p in reddit.fetch_threads_by_id(["gt", "pg"])] == ["gt", "pg"]
 
 
 def test_fetch_threads_by_id_names_missing_threads(monkeypatch):
-    monkeypatch.setattr(reddit, "_get", lambda path, params, *, settled: [_post("gt", "baseball")])
+    monkeypatch.setattr(reddit, "_get", lambda url, params, **kwargs: [_post("gt", "baseball")])
 
     with pytest.raises(reddit.ThreadLookupError, match="pg"):
         reddit.fetch_threads_by_id(["gt", "pg"])
@@ -52,7 +52,7 @@ def test_fetch_comments_pages_without_losing_same_second_comments(monkeypatch):
     everything = [_comment("a", 10), _comment("b", 11), _comment("c", 12), _comment("d", 12), _comment("e", 15)]
     requests_made = []
 
-    def fake_get(path, params, *, settled):
+    def fake_get(url, params, **kwargs):
         requests_made.append(params.get("after"))
         after = params.get("after", -1)
         return [c for c in everything if c["created_utc"] > after][: params["limit"]]
@@ -65,8 +65,37 @@ def test_fetch_comments_pages_without_losing_same_second_comments(monkeypatch):
     assert requests_made == [None, 11, 14]
 
 
+def test_fetch_comments_pages_an_archive_whose_after_is_inclusive(monkeypatch):
+    """PullPush returns the ``after`` second itself and takes ``size``, not ``limit``."""
+    monkeypatch.setattr(reddit, "PAGE_SIZE", 3)
+    everything = [_comment("a", 10), _comment("b", 11), _comment("c", 12), _comment("d", 12), _comment("e", 15)]
+    calls = []
+
+    def fake_get(url, params, **kwargs):
+        calls.append((url, params.get("after"), kwargs["trim"], kwargs["spacing_seconds"]))
+        after = params.get("after", -1)
+        return [c for c in everything if c["created_utc"] >= after][: params["size"]]
+
+    monkeypatch.setattr(reddit, "_get", fake_get)
+
+    comments = reddit.fetch_comments("t", thread_created_utc=0, source=reddit.PULLPUSH)
+
+    assert [c["id"] for c in comments] == ["a", "b", "c", "d", "e"]
+    assert [after for _, after, _, _ in calls] == [None, 12, 15]
+    assert all(url == reddit.PULLPUSH.url and trim and spacing == 3.0 for url, _, trim, spacing in calls)
+
+
+def test_trim_keeps_only_the_fields_we_store():
+    response = {"data": [{"id": "a", "body": "hi", "author": "fan", "all_awardings": [], "permalink": "/r/x"}]}
+
+    trimmed = reddit._trim_comments(response)["data"][0]
+
+    assert trimmed["body"] == "hi"
+    assert set(trimmed) == set(reddit.COMMENT_FIELDS.split(","))
+
+
 def test_fetch_comments_empty_thread(monkeypatch):
-    monkeypatch.setattr(reddit, "_get", lambda path, params, *, settled: [])
+    monkeypatch.setattr(reddit, "_get", lambda url, params, **kwargs: [])
 
     assert reddit.fetch_comments("t", thread_created_utc=0) == []
     assert reddit.build_comments([], "t", "baseball").empty
@@ -90,7 +119,7 @@ def test_ingest_threads_combines_all_threads(monkeypatch, tmp_path):
     monkeypatch.setattr(reddit, "fetch_threads_by_id", lambda ids: [_post("gt", "baseball"), _post("pg", "Dodgers")])
     by_thread = {"gt": [_comment("a", 10), _comment("b", 11)], "pg": [_comment("c", 20)]}
 
-    def fake_fetch(thread_id, created, on_page=None):
+    def fake_fetch(thread_id, created, on_page=None, source=None):
         on_page(len(by_thread[thread_id]))
         return by_thread[thread_id]
 
