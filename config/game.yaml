@@ -42,4 +42,7 @@ tick:
   window_s: 20           # how far back each call looks
   min_comments: 8        # below this, widen the window...
   max_window_s: 60       # ...up to this, then skip and carry the last value (stale)
-  play_lookback_s: 90    # plays ended within this long are listed in the state; set from measured lag in Phase 1
+  # Plays ended within this long are listed in the state. Measured in Phase 1:
+  # reaction starts 15-30s after a play ends, peaks at 45-75s, and is still
+  # 1.5x normal volume at 105s, so 90 would cut off the back of it.
+  play_lookback_s: 120

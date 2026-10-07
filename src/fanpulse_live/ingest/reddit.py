@@ -31,12 +31,12 @@ PAGE_SIZE = 100
 WINDOW_SECONDS = 300
 REQUEST_SPACING_SECONDS = 1.0
 # Arctic Shift answers 422 ("Timeout. Maybe slow down a bit") when a query times
-# out on its side, with an X-RateLimit-Reset header saying when its per-minute
-# window resets; the HTTP helper waits that long before each retry. Past these
-# retries the service is having a bad spell and the caller should back off.
+# out on its side, and the same request usually works seconds later. Retries
+# use a short, jittered wait. Waiting for the X-RateLimit-Reset it sends put
+# every retry on the top of the minute, where it failed five times running.
 RETRY_STATUSES = http.RETRY_STATUSES | {422}
-MAX_RETRIES = 6
-BACKOFF_SECONDS = 5.0
+MAX_RETRIES = 8
+BACKOFF_SECONDS = 4.0
 # num_comments and score only settle about 36 hours after posting, so younger
 # threads are fetched but not cached.
 SETTLED_AFTER_SECONDS = 48 * 3600
@@ -119,6 +119,7 @@ def _get(
         max_retries=MAX_RETRIES,
         backoff_seconds=BACKOFF_SECONDS,
         transform=_trim_comments if trim else None,
+        jitter=True,
     )
     if not was_cached:
         time.sleep(spacing_seconds)
@@ -253,7 +254,8 @@ def ingest_threads_by_window(
     types = {t["id"]: t["type"] for t in threads}
     by_thread: dict[str, list[dict]] = {}
 
-    for post in posts:
+    # Small threads first: they are quick, and the long part can then be left running.
+    for post in sorted(posts, key=lambda p: types[p["id"]] == "game"):
         thread_id = post["id"]
         if types[thread_id] != "game":
             on_page = None if on_progress is None else (lambda n, tid=thread_id: on_progress(tid, n))
