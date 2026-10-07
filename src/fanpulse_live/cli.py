@@ -75,7 +75,25 @@ def build_parser() -> argparse.ArgumentParser:
     ticks = subparsers.add_parser("ticks", help="run every update of the game through Jev (resumable)")
     ticks.add_argument("--max-cost", type=float, default=8.0, help="stop once this run has spent this many dollars")
     ticks.add_argument("--limit", type=int, help="only the first N updates, for a trial run")
+    ticks.add_argument(
+        "--cached-only",
+        action="store_true",
+        help="send nothing to Jev: use the answers already paid for and mark the rest pending",
+    )
     ticks.set_defaults(func=cmd_ticks)
+
+    build = subparsers.add_parser(
+        "build", help="build baseline readings, moments and summaries, and export the dashboard's data"
+    )
+    build.add_argument("--no-summaries", action="store_true", help="skip the LLM one-liners for moments")
+    build.set_defaults(func=cmd_build)
+
+    serve = subparsers.add_parser("serve", help="serve the dashboard at http://localhost:8000")
+    serve.add_argument("--port", type=int, default=8000)
+    serve.set_defaults(func=cmd_serve)
+
+    scores = subparsers.add_parser("baseline-scores", help="score every comment with the local RoBERTa baseline")
+    scores.set_defaults(func=cmd_baseline_scores)
 
     return parser
 
@@ -552,6 +570,7 @@ def cmd_ticks(args: argparse.Namespace) -> int:
             max_cost=args.max_cost,
             on_progress=lambda done, total, cost, paid: write_progress("running", done, total, cost, paid),
             times=times,
+            cached_only=args.cached_only,
         )
     except (ticks.CostLimitReached, client.JevError) as exc:
         write_progress(f"stopped: {str(exc)[:200]}")
@@ -567,13 +586,143 @@ def cmd_ticks(args: argparse.Namespace) -> int:
     print(f"{len(times):,} updates x {len(loaded['streams'])} streams = {len(tick_table):,} readings in {minutes:.1f} min")
     print(f"Paid Jev calls this run: {totals['paid_calls']:,}; {totals['input_tokens']:,} input tokens; ${totals['cost']:.4f}")
     print(f"Comments tagged: {len(tags):,}\n")
-    print(f"{'stream':<24}{'readings':>9}{'stale':>8}{'widened':>9}{'stale %':>9}{'widened %':>11}")
+    print(f"{'stream':<24}{'readings':>9}{'stale':>8}{'widened':>9}{'pending':>9}{'stale %':>9}{'widened %':>11}")
     for stream, group in tick_table.groupby("stream"):
         stale = int(group["stale"].sum())
         widened = int(((group["window_used_s"] > loaded["tick"]["window_s"]) & ~group["stale"]).sum())
         print(
-            f"{stream:<24}{len(group):>9}{stale:>8}{widened:>9}{stale / len(group):>9.0%}{widened / len(group):>11.0%}"
+            f"{stream:<24}{len(group):>9}{stale:>8}{widened:>9}{int(group['pending'].sum()):>9}"
+            f"{stale / len(group):>9.0%}{widened / len(group):>11.0%}"
         )
+    return 0
+
+
+def cmd_build(args: argparse.Namespace) -> int:
+    import yaml
+
+    from fanpulse_live import config, export, gamestate, storage
+    from fanpulse_live.engine import baseline_ticks, moments, summarize, ticks
+
+    loaded = config.load_game()
+    game_pk = loaded["game"]["game_pk"]
+    tables = _load_tables(game_pk, ("comments", "comment_scores"))
+    if tables is None:
+        print("(comment_scores comes from `fanpulse-live baseline-scores`)", file=sys.stderr)
+        return 1
+
+    timeline = gamestate.load_timeline(game_pk)
+    step = loaded["tick"]["update_every_s"]
+    times = ticks.tick_times(timeline, step)
+    comments = tables["comments"]
+    volume = ticks.volume_buckets(comments, times, step)
+    storage.write_table("volume", game_pk, volume)
+
+    nickname_path = config.PROJECT_ROOT / "config" / "nicknames.yaml"
+    nicknames = (yaml.safe_load(nickname_path.read_text(encoding="utf-8")) or {}).get("nicknames") or {}
+    tagged = baseline_ticks.tag_comments(comments, tables["comment_scores"], timeline, nicknames)
+    base_ticks, base_tags = baseline_ticks.build_ticks(tagged, times, loaded)
+    storage.write_table("ticks_baseline", game_pk, base_ticks)
+    storage.write_table("comment_tags_baseline", game_pk, base_tags)
+    print(f"baseline: {len(base_ticks):,} readings, {len(base_tags):,} comments tagged, "
+          f"{base_tags['subject'].notna().mean():.0%} of them naming a player")
+
+    readings = {"baseline": (base_ticks, base_tags)}
+    try:
+        readings["jev"] = (storage.read_table("ticks", game_pk), storage.read_table("comment_tags", game_pk))
+    except FileNotFoundError:
+        print("jev: no tick tables yet (run `fanpulse-live ticks`)")
+
+    stream_ids = [s["id"] for s in loaded["streams"]]
+    start, end = int(times[0].timestamp()), int(times[-1].timestamp())
+    comment_data, comment_index = export.comments_file(comments, stream_ids, start - 60, end)
+    out = export.web_data_dir()
+    export._write(out / "game.json", export.game_file(timeline, times))
+    export._write(out / "comments.json", comment_data)
+
+    sources = []
+    summaries_work = not args.no_summaries
+    for name, (tick_table, tags) in readings.items():
+        found = moments.find_moments(tick_table, volume, timeline, loaded["tick"]["play_lookback_s"])
+        storage.write_table(f"moments_{name}", game_pk, found)
+        lines: dict[str, dict[str, str]] = {}
+        for moment in found.to_dict("records") if summaries_work else []:
+            prompt = summarize.build_prompt(moment, comments, tick_table, loaded["streams"], loaded["game"]["label"])
+            if prompt is None:
+                continue
+            try:
+                lines[moment["moment_id"]] = summarize.summarize(prompt)
+            except summarize.SummaryError as exc:
+                print(f"summaries skipped: {str(exc)[:160]}")
+                summaries_work = False
+                break
+        data, coverage = export.source_file(tick_table, tags, volume, found, lines, stream_ids, times, comment_index)
+        export._write(out / f"{name}.json", data)
+        sources.append({"id": name, "label": export.SOURCE_LABELS[name], "coverage": round(coverage, 4), "moments": len(found)})
+        print(f"{name}: {len(found)} moments, {len(lines)} with summaries, covers {coverage:.0%} of readings")
+
+    # The fullest source is the default; Jev wins a tie.
+    sources.sort(key=lambda s: (-round(s["coverage"], 2), s["id"] != "jev"))
+    anchors = export.read_anchors(config.PROJECT_ROOT / "config" / "anchors.csv", timeline)
+    export._write(out / "manifest.json", export.manifest(loaded, timeline, times, sources, anchors))
+    print(f"default source: {sources[0]['id']}; video anchors: {len(anchors)}")
+    print(f"Dashboard data written to {out}")
+    return 0
+
+
+def cmd_serve(args: argparse.Namespace) -> int:
+    import functools
+    import http.server
+
+    from fanpulse_live import config
+
+    web = config.PROJECT_ROOT / "web"
+    handler = functools.partial(http.server.SimpleHTTPRequestHandler, directory=str(web))
+    print(f"Fan Pulse Live dashboard: http://localhost:{args.port}  (Ctrl+C to stop)")
+    with http.server.ThreadingHTTPServer(("127.0.0.1", args.port), handler) as server:
+        try:
+            server.serve_forever()
+        except KeyboardInterrupt:
+            pass
+    return 0
+
+
+def cmd_baseline_scores(args: argparse.Namespace) -> int:
+    import time
+    from datetime import datetime
+
+    from fanpulse_live import config, storage
+    from fanpulse_live.analysis import baseline
+
+    game_pk = config.load_game()["game"]["game_pk"]
+    tables = _load_tables(game_pk, ("comments",))
+    if tables is None:
+        return 1
+    comments = tables["comments"]
+    progress_path = config.data_dir() / "baseline_progress.md"
+    started = time.time()
+
+    def on_progress(done: int, total: int) -> None:
+        if done % (baseline.BATCH_SIZE * 20) and done != total:
+            return
+        elapsed = time.time() - started
+        progress_path.write_text(
+            "# Baseline scoring progress\n\n"
+            f"Updated {datetime.now():%Y-%m-%d %H:%M:%S}\n\n"
+            f"**{done:,} of {total:,} comments ({done / total:.0%})**, {done / elapsed:.0f} per second, "
+            f"{elapsed / 60:.1f} min elapsed\n",
+            encoding="utf-8",
+        )
+
+    scores = baseline.score_texts(list(comments["body"]), on_progress)
+    table = baseline.scores_table(list(comments["comment_id"]), scores)
+    storage.write_table("comment_scores", game_pk, table)
+    minutes = (time.time() - started) / 60
+    progress_path.write_text(
+        f"# Baseline scoring progress\n\nUpdated {datetime.now():%Y-%m-%d %H:%M:%S}\n\n"
+        f"**done: {len(table):,} comments in {minutes:.1f} min**\n",
+        encoding="utf-8",
+    )
+    print(f"Scored {len(table):,} comments in {minutes:.1f} min; mean sentiment {table['sentiment'].mean():+.3f}")
     return 0
 
 

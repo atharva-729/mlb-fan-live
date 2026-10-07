@@ -62,8 +62,13 @@ def run_tick(
     parents: dict[str, str],
     subjects: dict[str, str | None],
     game_config: dict,
+    cached_only: bool = False,
 ) -> TickResult:
-    """One stream at one update: build the call, ask Jev, flatten the answers."""
+    """One stream at one update: build the call, ask Jev, flatten the answers.
+
+    With ``cached_only`` a reading Jev has not answered yet comes back marked
+    ``pending`` instead of being asked for.
+    """
     call = calls.prepare_call(timeline, t, stream, stream_comments, parents, subjects, game_config)
     row = {
         "t": pd.Timestamp(t),
@@ -72,6 +77,7 @@ def run_tick(
         "n_comments": len(call.window.comments),
         "n_new": len(call.new_numbers),
         "stale": call.window.stale,
+        "pending": False,
         "mood": None, "mood_confidence": None, "target": None, "target_top": None,
         "emotion": None, "emotion_probs": None, "moment": None, "blame": None,
     }  # fmt: skip
@@ -80,13 +86,17 @@ def run_tick(
 
     answers: dict[str, dict] = {}
     result = TickResult(row, [])
-    for batch in call.question_batches:
-        response = client.ask(call.state, batch)
-        answers.update(response["answers"])
-        if not response["cached"]:
-            result.input_tokens += response["usage"]["input_tokens"]
-            result.cost += response["usage"]["cost"]
-            result.paid_calls += 1
+    try:
+        for batch in call.question_batches:
+            response = client.ask(call.state, batch, cached_only=cached_only)
+            answers.update(response["answers"])
+            if not response["cached"]:
+                result.input_tokens += response["usage"]["input_tokens"]
+                result.cost += response["usage"]["cost"]
+                result.paid_calls += 1
+    except client.CacheMiss:
+        row["pending"] = True
+        return TickResult(row, [])
 
     if "mood" in answers:
         row["mood"] = questions.score_to_unit(answers["mood"])
@@ -124,11 +134,13 @@ def run_game(
     max_cost: float,
     on_progress: Callable[[int, int, float, int], None] | None = None,
     times: list[datetime] | None = None,
+    cached_only: bool = False,
 ) -> tuple[pd.DataFrame, pd.DataFrame, dict]:
     """Every (update, stream) of the game. Returns the ticks table, the comment tags and run totals.
 
     Stops with ``CostLimitReached`` once this run has paid more than
-    ``max_cost`` dollars; what was paid for stays cached.
+    ``max_cost`` dollars; what was paid for stays cached. With ``cached_only``
+    nothing is sent to Jev and unanswered readings are marked ``pending``.
     """
     times = times or tick_times(timeline, game_config["tick"]["update_every_s"])
     subjects = questions.subject_options(timeline)
@@ -143,7 +155,9 @@ def run_game(
 
     with ThreadPoolExecutor(max_workers=PARALLEL_CALLS) as pool:
         futures = [
-            pool.submit(run_tick, timeline, t, stream, by_stream[stream["id"]], parents, subjects, game_config)
+            pool.submit(
+                run_tick, timeline, t, stream, by_stream[stream["id"]], parents, subjects, game_config, cached_only
+            )
             for t, stream in tasks
         ]
         try:
