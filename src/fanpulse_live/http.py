@@ -85,6 +85,7 @@ def get_json(
     retry_statuses: Collection[int] = RETRY_STATUSES,
     max_retries: int = MAX_RETRIES,
     backoff_seconds: float = BACKOFF_SECONDS,
+    transform: Callable[[Any], Any] | None = None,
 ) -> Any:
     """GET ``url`` and return parsed JSON, reading from the cache when present.
 
@@ -92,6 +93,8 @@ def get_json(
     (a game still in progress), since a cached response is never re-fetched.
     ``max_retries`` and ``backoff_seconds`` let a caller be more patient with a
     slow service; the wait doubles each attempt up to ``MAX_BACKOFF_SECONDS``.
+    ``transform`` reshapes a fresh response before it is cached and returned,
+    for a service that sends far more than we keep.
     """
     path = cache_path(url, params)
     if path.exists():
@@ -112,6 +115,8 @@ def get_json(
         else:
             if response.status_code == 200:
                 data = response.json()
+                if transform is not None:
+                    data = transform(data)
                 if cache_if is not None and not cache_if(data):
                     log.debug("not caching %s (response not final)", full)
                     return data
