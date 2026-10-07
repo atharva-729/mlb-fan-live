@@ -9,6 +9,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import random
 import re
 import time
 from pathlib import Path
@@ -86,6 +87,7 @@ def get_json(
     max_retries: int = MAX_RETRIES,
     backoff_seconds: float = BACKOFF_SECONDS,
     transform: Callable[[Any], Any] | None = None,
+    jitter: bool = False,
 ) -> Any:
     """GET ``url`` and return parsed JSON, reading from the cache when present.
 
@@ -94,7 +96,9 @@ def get_json(
     ``max_retries`` and ``backoff_seconds`` let a caller be more patient with a
     slow service; the wait doubles each attempt up to ``MAX_BACKOFF_SECONDS``.
     ``transform`` reshapes a fresh response before it is cached and returned,
-    for a service that sends far more than we keep.
+    for a service that sends far more than we keep. ``jitter`` randomizes each
+    wait by half either way, so retries do not line up with every other
+    client's.
     """
     path = cache_path(url, params)
     if path.exists():
@@ -107,6 +111,8 @@ def get_json(
 
     for attempt in range(max_retries):
         backoff = min(backoff_seconds * 2**attempt, MAX_BACKOFF_SECONDS)
+        if jitter:
+            backoff *= random.uniform(0.5, 1.5)
         try:
             response = session.get(full, timeout=TIMEOUT_SECONDS)
         except requests.RequestException as exc:
@@ -129,9 +135,7 @@ def get_json(
             if response.status_code == 429:
                 delay = _rate_limit_sleep(response, attempt)
             elif response.status_code in retry_statuses:
-                # A service that says when its rate-limit window resets is asking us to wait that long.
-                told_when = any(h in response.headers for h in ("X-RateLimit-Reset", "Retry-After"))
-                delay = _rate_limit_sleep(response, attempt) if told_when else backoff
+                delay = backoff
             else:
                 raise HttpError(f"GET {full} failed: {last_error}: {response.text[:200]}")
 

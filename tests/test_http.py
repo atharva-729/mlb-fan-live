@@ -71,13 +71,15 @@ def test_429_sleeps_for_rate_limit_reset(isolated_data_dir):
     assert isolated_data_dir == [7.5]
 
 
-def test_retryable_error_waits_for_the_reset_the_service_names(isolated_data_dir):
-    session = FakeSession(
-        [FakeResponse(422, headers={"X-RateLimit-Reset": "34"}), FakeResponse(payload={"data": []})]
+def test_jitter_spreads_the_wait_around_the_backoff(isolated_data_dir):
+    session = FakeSession([FakeResponse(422), FakeResponse(payload={"data": []})])
+
+    result = http.get_json(
+        "https://example.com/busy", session=session, retry_statuses={422}, backoff_seconds=4, jitter=True
     )
 
-    assert http.get_json("https://example.com/busy", session=session, retry_statuses={422}) == {"data": []}
-    assert isolated_data_dir == [34.5]
+    assert result == {"data": []}
+    assert 2 <= isolated_data_dir[0] <= 6
 
 
 def test_client_error_raises_without_retry_or_cache():

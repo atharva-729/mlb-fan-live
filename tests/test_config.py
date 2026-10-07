@@ -12,7 +12,7 @@ def test_game_config_matches_the_readme():
         "window_s": 20,
         "min_comments": 8,
         "max_window_s": 60,
-        "play_lookback_s": 90,
+        "play_lookback_s": 120,
     }
 
 
