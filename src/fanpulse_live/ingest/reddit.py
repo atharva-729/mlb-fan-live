@@ -20,10 +20,11 @@ log = logging.getLogger(__name__)
 BASE_URL = "https://arctic-shift.photon-reddit.com"
 
 PAGE_SIZE = 100
-REQUEST_SPACING_SECONDS = 0.5
-# Arctic Shift answers 422 when a query times out on its side. A retry usually
-# works, so wait 5s, 10s, 20s, 40s, 60s. Past that the service is having a bad
-# spell and the caller should back off for longer.
+REQUEST_SPACING_SECONDS = 1.0
+# Arctic Shift answers 422 ("Timeout. Maybe slow down a bit") when a query times
+# out on its side, with an X-RateLimit-Reset header saying when its per-minute
+# window resets; the HTTP helper waits that long before each retry. Past these
+# retries the service is having a bad spell and the caller should back off.
 RETRY_STATUSES = http.RETRY_STATUSES | {422}
 MAX_RETRIES = 6
 BACKOFF_SECONDS = 5.0

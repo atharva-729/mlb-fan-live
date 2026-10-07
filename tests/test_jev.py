@@ -96,7 +96,7 @@ def test_subject_options_list_every_player_then_the_rest(timeline):
     ]  # fmt: skip
 
 
-def test_window_questions_change_mood_for_a_neutral_crowd(timeline):
+def test_window_questions_skip_mood_for_a_neutral_crowd(timeline):
     subjects = questions.subject_options(timeline)
 
     team = questions.window_questions("Dodgers", subjects)
@@ -104,7 +104,7 @@ def test_window_questions_change_mood_for_a_neutral_crowd(timeline):
 
     assert list(team) == ["mood", "target", "emotion", "moment", "blame"]
     assert "Dodgers fans" in team["mood"]["instructions"]
-    assert neutral["mood"]["criteria"] == questions.NEUTRAL_MOOD_LEVELS
+    assert list(neutral) == ["target", "emotion", "moment", "blame"]
     assert team["moment"]["type"] == "noul"
 
 

@@ -315,6 +315,7 @@ Compare how the different communities react:
 ---
 
 ## Later (not now)
+- **Mood for the neutral stream:** `r/baseball:neutral` gets every question except `mood`, because mood is a fanbase's feeling about its own team and these commenters have no team in the game. A possible later reading: how much the neutral crowd is enjoying the game.
 - **Clef** (Cloudflare, accepts images) on video frames, for an auto-generated visual ticker. Blocked on footage licensing.
 - **More sources:** X, TikTok, Instagram, and YouTube comments. Add each as a new `Source`, using the same streams and tick engine.
 - **More games:** WS G3 (68k comments in r/baseball, 18 innings) and G7 (57k).
