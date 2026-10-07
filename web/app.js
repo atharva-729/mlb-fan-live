@@ -137,11 +137,13 @@ if (typeof module !== 'undefined') {
 const RECENT_SECONDS = 120;
 const COMMENTS_SHOWN = 40;
 const SUBJECTS_SHOWN = 6;
-const MOOD_SMOOTHING = 0.25;
+// Share of each new reading in the smoothed mood line. At one reading per 5 seconds,
+// 0.05 averages over roughly the last two minutes; 0.3 is close to the raw readings.
+const MOOD_SMOOTH = 0.05, MOOD_RAW = 0.3;
 
 const S = {
   manifest: null, game: null, comments: null, src: null, sourceId: null,
-  now: 0, playing: false, speed: 16, tab: -1, showFuture: false, selected: null,
+  now: 0, playing: false, speed: 16, tab: -1, showFuture: false, smooth: true, selected: null,
   derived: null, player: null, synced: false,
   drawn: {tick: -1, comment: -1, moments: -1, chartAt: 0, key: ''},
 };
@@ -201,6 +203,7 @@ async function init() {
   $('play').onclick = () => setPlaying(!S.playing);
   $('speed').onchange = e => { S.speed = Number(e.target.value); };
   $('show-future').onchange = e => { S.showFuture = e.target.checked; invalidate(); };
+  $('smooth').onchange = e => { S.smooth = e.target.checked; deriveMood(); };
   $('prev-moment').onclick = () => jumpMoment(-1);
   $('next-moment').onclick = () => jumpMoment(1);
   buildTabs();
@@ -232,14 +235,18 @@ async function loadSource(id) {
     ? 'covers the whole game'
     : `covers ${Math.round(info.coverage * 100)}% of the game so far; the rest is still to run`;
 
+  S.selected = null;
+  deriveMood();
+}
+
+function deriveMood() {
   const mood = {};
   for (const stream of S.manifest.streams) {
     const series = S.src.ticks[stream.id];
     // A stale update keeps the last reading; one the model has not answered yet stays empty.
-    mood[stream.id] = ema(forwardFill(series.mood, series.stale), MOOD_SMOOTHING);
+    mood[stream.id] = ema(forwardFill(series.mood, series.stale), S.smooth ? MOOD_SMOOTH : MOOD_RAW);
   }
   S.derived = {mood};
-  S.selected = null;
   invalidate();
 }
 
@@ -462,7 +469,7 @@ function currentLine(name) {
   if (!player) return null;
   let line = null;
   for (const [t, text] of player.lines) if (t <= S.now) line = text;
-  return {team: player.team, line};
+  return {team: player.team, line, season: player.season};
 }
 
 function renderSubjects() {
@@ -491,7 +498,8 @@ function renderSubjects() {
   card.innerHTML = `
     <span class="who">${esc(chosen)} <span class="muted">${esc(team)}</span></span>
     <span class="line">Fans, last 2 minutes: <b>${recent ? signed(recent.sentiment, 2) : '–'}</b> ${recent ? `across ${recent.count} comment${recent.count === 1 ? '' : 's'}` : '(no recent comments)'}</span>
-    <span class="line">Today: <b>${esc(info.line || 'nothing yet')}</b></span>`;
+    <span class="line">Today: <b>${esc(info.line || 'nothing yet')}</b></span>
+    ${info.season ? `<span class="line">2025 season: <b>${esc(info.season)}</b></span>` : ''}`;
 }
 
 function fanbaseMood(fanbase, i) {

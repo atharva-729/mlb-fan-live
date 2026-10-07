@@ -15,6 +15,9 @@ from fanpulse_live import http, storage
 log = logging.getLogger(__name__)
 
 BASE_URL = "https://statsapi.mlb.com"
+# Below these a season line says nothing: a pitcher's handful of at-bats, a position player's mop-up inning.
+MIN_AT_BATS = 30
+MIN_INNINGS = 10
 
 
 class GameLookupError(LookupError):
@@ -85,6 +88,28 @@ def fetch_series_desc(game_pk: int) -> str | None:
             if game["gamePk"] == game_pk:
                 return game.get("seriesDescription")
     return None
+
+
+def fetch_season_line(player_id: int, season: int) -> str | None:
+    """A player's regular-season line, like ``.282/.392/.622, 55 HR`` or ``2.35 ERA, 180.1 IP, 216 K``.
+
+    The regular season is used because it was complete before any postseason
+    game, so the line is what a fan could have known that night. A two-way
+    player gets both halves. Cached per player.
+    """
+    response = http.get_json(
+        f"{BASE_URL}/api/v1/people/{player_id}/stats",
+        {"stats": "season", "group": "hitting,pitching", "season": season, "gameType": "R"},
+    )
+    stats = {s["group"]["displayName"]: s["splits"][0]["stat"] for s in response.get("stats", []) if s.get("splits")}
+    parts = []
+    hitting = stats.get("hitting")
+    if hitting and hitting.get("atBats", 0) >= MIN_AT_BATS:
+        parts.append(f"{hitting['avg']}/{hitting['obp']}/{hitting['slg']}, {hitting['homeRuns']} HR")
+    pitching = stats.get("pitching")
+    if pitching and float(pitching.get("inningsPitched", 0)) >= MIN_INNINGS:
+        parts.append(f"{pitching['era']} ERA, {pitching['inningsPitched']} IP, {pitching['strikeOuts']} K")
+    return "; ".join(parts) or None
 
 
 def build_games(feed: dict, series_desc: str | None = None) -> pd.DataFrame:

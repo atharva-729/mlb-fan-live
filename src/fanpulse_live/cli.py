@@ -88,6 +88,9 @@ def build_parser() -> argparse.ArgumentParser:
     build.add_argument("--no-summaries", action="store_true", help="skip the LLM one-liners for moments")
     build.set_defaults(func=cmd_build)
 
+    fan_report = subparsers.add_parser("fanbase-report", help="write the offline report comparing the fanbases")
+    fan_report.set_defaults(func=cmd_fanbase_report)
+
     serve = subparsers.add_parser("serve", help="serve the dashboard at http://localhost:8000")
     serve.add_argument("--port", type=int, default=8000)
     serve.set_defaults(func=cmd_serve)
@@ -494,8 +497,9 @@ def cmd_label_sheet(args: argparse.Namespace) -> int:
 def cmd_evaluate(args: argparse.Namespace) -> int:
     import json
 
-    from fanpulse_live import config, gamestate
+    from fanpulse_live import config, gamestate, storage
     from fanpulse_live.analysis import evaluate, labelling
+    from fanpulse_live.engine import calls
     from fanpulse_live.jev import client, questions
     from fanpulse_live.viz import charts
 
@@ -518,7 +522,34 @@ def cmd_evaluate(args: argparse.Namespace) -> int:
         "median_latency_s": after["median_latency_s"],
     }
 
-    text = evaluate.report(evaluate.compare(items, labels, answers), spent)
+    tallies = evaluate.compare(items, labels, answers)
+    text = evaluate.report(tallies, spent)
+
+    # The RoBERTa baseline, if it has been run: find each labelled comment's id by rebuilding its window.
+    loaded = config.load_game()
+    game_pk = loaded["game"]["game_pk"]
+    try:
+        scores = storage.read_table("comment_scores", game_pk).set_index("comment_id")["sentiment"]
+        comments = storage.read_table("comments", game_pk)
+    except FileNotFoundError:
+        text += "\n## Jev against the RoBERTa baseline\n\nNot run yet (`fanpulse-live baseline-scores`).\n"
+    else:
+        timeline = gamestate.load_timeline(game_pk)
+        streams = {s["id"]: s for s in loaded["streams"]}
+        game_threads = comments[comments["thread_type"] == "game"]
+        baseline_scores = {}
+        for item in items:
+            in_stream = game_threads[game_threads["stream"] == item["stream"]].sort_values("created_utc")
+            call = calls.prepare_call(
+                timeline, gamestate.parse_time(item["time"]), streams[item["stream"]], in_stream, {}, subjects, loaded
+            )
+            ids = list(call.window.comments["comment_id"])
+            for k in item["label_comments"]:
+                if ids[k - 1] in scores.index:
+                    baseline_scores[(item["id"], k)] = float(scores[ids[k - 1]])
+        roberta = evaluate.compare_baseline(items, labels, baseline_scores)
+        text += "\n" + evaluate.baseline_section(tallies["sentiment"], roberta)
+
     path = charts.reports_dir() / "phase2_eval.md"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(text, encoding="utf-8")
@@ -600,8 +631,9 @@ def cmd_ticks(args: argparse.Namespace) -> int:
 def cmd_build(args: argparse.Namespace) -> int:
     import yaml
 
-    from fanpulse_live import config, export, gamestate, storage
+    from fanpulse_live import config, export, gamestate, http, storage
     from fanpulse_live.engine import baseline_ticks, moments, summarize, ticks
+    from fanpulse_live.ingest import mlb
 
     loaded = config.load_game()
     game_pk = loaded["game"]["game_pk"]
@@ -636,7 +668,18 @@ def cmd_build(args: argparse.Namespace) -> int:
     start, end = int(times[0].timestamp()), int(times[-1].timestamp())
     comment_data, comment_index = export.comments_file(comments, stream_ids, start - 60, end)
     out = export.web_data_dir()
-    export._write(out / "game.json", export.game_file(timeline, times))
+    season = int(loaded["game"]["date"][:4])
+    season_lines = {}
+    for player in timeline.players.values():
+        try:
+            line = mlb.fetch_season_line(player.id, season)
+        except (http.HttpError, KeyError, ValueError) as exc:
+            print(f"no season line for {player.name}: {str(exc)[:80]}")
+            continue
+        if line:
+            season_lines[player.name] = line
+    print(f"season lines for {len(season_lines)} of {len(timeline.players)} players")
+    export._write(out / "game.json", export.game_file(timeline, times, season_lines))
     export._write(out / "comments.json", comment_data)
 
     sources = []
@@ -667,6 +710,135 @@ def cmd_build(args: argparse.Namespace) -> int:
     print(f"default source: {sources[0]['id']}; video anchors: {len(anchors)}")
     print(f"Dashboard data written to {out}")
     return 0
+
+
+def cmd_fanbase_report(args: argparse.Namespace) -> int:
+    import yaml
+
+    from fanpulse_live import config, gamestate
+    from fanpulse_live.analysis import baseline, fanbases
+    from fanpulse_live.viz import charts
+
+    loaded = config.load_game()
+    game_pk = loaded["game"]["game_pk"]
+    tables = _load_tables(game_pk, ("comments", "comment_scores"))
+    if tables is None:
+        return 1
+    timeline = gamestate.load_timeline(game_pk)
+    nickname_path = config.PROJECT_ROOT / "config" / "nicknames.yaml"
+    nicknames = (yaml.safe_load(nickname_path.read_text(encoding="utf-8")) or {}).get("nicknames") or {}
+    patterns = baseline.name_patterns(timeline, nicknames)
+
+    tagged = tables["comments"].merge(tables["comment_scores"][["comment_id", "sentiment"]], on="comment_id")
+    tagged["subject"] = [baseline.mentioned_player(body, patterns) for body in tagged["body"]]
+    tagged = fanbases.with_fanbase(tagged, loaded["streams"])
+    in_game = tagged[(tagged["thread_type"] == "game") & (tagged["phase"] == "in-game")]
+    postgame = tagged[tagged["thread_type"] == "postgame"]
+
+    echo = fanbases.echo_chamber(in_game, loaded["streams"])
+    perception = fanbases.perception_vs_performance(in_game, timeline)
+    tone = fanbases.tone_by_inning(in_game, timeline)
+    recovered, curves = fanbases.recovery(in_game, timeline)
+    after = fanbases.postgame_subjects(postgame)
+    colors = charts.stream_colors([s["id"] for s in loaded["streams"]])
+
+    findings = []
+    for fanbase in ("Dodgers fans", "Blue Jays fans"):
+        home, flaired = echo[echo["fanbase"] == fanbase].itertuples()
+        findings.append(
+            f"<li><b>{fanbase}, own subreddit vs r/baseball:</b> mean sentiment {home.mean_sentiment:+.2f} at home against "
+            f"{flaired.mean_sentiment:+.2f} among flaired fans in r/baseball; {home.share_negative:.0%} against "
+            f"{flaired.share_negative:.0%} of comments negative. Their minute-by-minute moods correlate at {home.minute_correlation:.2f}.</li>"
+        )
+        own = perception[(perception["fanbase"] == fanbase)]
+        own = own[own["team"] == ("LAD" if fanbase == "Dodgers fans" else "TOR")]
+        if len(own):
+            loved, blamed = own.loc[own["sentiment"].idxmax()], own.loc[own["sentiment"].idxmin()]
+            most = own.iloc[0]
+            findings.append(
+                f"<li><b>{fanbase}, who they talk about:</b> {most.player} most of all ({most.mentions} mentions, sentiment "
+                f"{most.sentiment:+.2f}, WPA {most.wpa:+.1%}). Warmest toward {loved.player} ({loved.sentiment:+.2f}, WPA {loved.wpa:+.1%}); "
+                f"coldest toward {blamed.player} ({blamed.sentiment:+.2f}, WPA {blamed.wpa:+.1%}).</li>"
+            )
+    for row in recovered.itertuples():
+        back = "did not get back to its earlier level within 12 minutes" if row.seconds_to_recover is None or row.seconds_to_recover != row.seconds_to_recover \
+            else f"was back to its earlier level {row.seconds_to_recover / 60:.1f} minutes after the play"
+        findings.append(
+            f"<li><b>{row.fanbase}, worst moment:</b> {html_escape(row.play)} ({row.team_wp_change:+.0%} win probability). Mood went from "
+            f"{row.mood_before:+.2f} to a low of {row.mood_low:+.2f} after {row.seconds_to_low}s and {back}.</li>"
+        )
+
+    intro = (
+        f"<p>{loaded['game']['label']}: {timeline.away_name} at {timeline.home_name}. {len(in_game):,} in-game comments "
+        f"and {len(postgame):,} postgame comments across {len(loaded['streams'])} communities.</p>"
+        "<p><b>How to read this.</b> Sentiment here is the RoBERTa baseline: the tone of each comment on a −1 to +1 scale, "
+        "read without knowing the game or whose fan is talking, and taking sarcasm literally. \"Who a comment is about\" is "
+        "name matching, so a comment that says \"he\" or \"this guy\" is not counted. Emotion types and blame aimed at "
+        "managers need Jev's readings and are not in this version.</p>"
+        f"<h2>Findings</h2><ul>{''.join(findings)}</ul>"
+    )
+    sections = [
+        (
+            "Home crowd vs the same fans in r/baseball",
+            "<p>Does a team's own subreddit react differently from that team's flaired fans in the neutral subreddit? "
+            "Swing is the spread of the minute-by-minute mood.</p>",
+            fanbases.echo_figure(in_game, loaded["streams"], colors),
+            fanbases.html_table(
+                echo.drop(columns=["stream"]),
+                {"mean_sentiment": "+.2f", "share_negative": ".0%", "share_positive": ".0%", "swing": ".2f", "minute_correlation": ".2f", "comments": ","},
+            ),
+        ),
+        (
+            "Perception vs performance",
+            "<p>Each team's fans on their own players: how they talk about him against what he did. Up and left is a "
+            "player fans like more than his game deserved; down and right is the reverse. Bigger dots are named more often.</p>",
+            fanbases.perception_figure(perception, timeline),
+            fanbases.html_table(
+                # Each team's fans on their own ten most-named players, as in the chart.
+                perception[
+                    ((perception["fanbase"] == "Dodgers fans") & (perception["team"] == "LAD"))
+                    | ((perception["fanbase"] == "Blue Jays fans") & (perception["team"] == "TOR"))
+                ].groupby("fanbase", sort=False).head(10),
+                {"sentiment": "+.2f", "wpa": "+.1%", "mentions": ","},
+            ),
+        ),
+        (
+            "Tone by inning",
+            "<p>The mix of negative, neutral and positive comments as the game went on.</p>",
+            fanbases.tone_figure(tone),
+            "",
+        ),
+        (
+            "Recovery after each team's worst moment",
+            "<p>The play that cost each team the most win probability, and how its fans' mood moved around it.</p>",
+            fanbases.recovery_figure(curves, recovered),
+            fanbases.html_table(recovered, {"team_wp_change": "+.0%", "mood_before": "+.2f", "mood_low": "+.2f"}),
+        ),
+        (
+            "Postgame: who each fanbase was still talking about",
+            "<p>The most-named players in each community's postgame thread.</p>",
+            None,
+            fanbases.html_table(after, {"sentiment": "+.2f", "mentions": ","}),
+        ),
+    ]
+    path = charts.reports_dir() / "fanbase_report.html"
+    fanbases.write_report(path, "How the fanbases reacted", intro, sections)
+    print(f"Report: {path}")
+    for line in findings:
+        print(" -", re_strip_tags(line))
+    return 0
+
+
+def html_escape(text: str) -> str:
+    import html
+
+    return html.escape(text)
+
+
+def re_strip_tags(text: str) -> str:
+    import re
+
+    return re.sub(r"<[^>]+>", "", text)
 
 
 def cmd_serve(args: argparse.Namespace) -> int:

@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Fan Pulse Live</title>
   <link rel="stylesheet" href="style.css">
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/plotly.js/2.35.2/plotly.min.js" defer></script>
+  <script src="vendor/plotly.min.js" defer></script>
   <script src="app.js" defer></script>
 </head>
 <body>
@@ -46,7 +46,10 @@
           <span id="clock" class="clock"></span>
         </div>
         <input id="scrub" type="range" min="0" max="1" step="1" value="0" aria-label="Game time">
-        <label class="inline check"><input id="show-future" type="checkbox"> Show the whole game on the chart</label>
+        <div class="transport-row">
+          <label class="inline check"><input id="show-future" type="checkbox"> Show the whole game on the chart</label>
+          <label class="inline check"><input id="smooth" type="checkbox" checked> Smooth mood (about 2 minutes)</label>
+        </div>
       </div>
 
       <div class="card">

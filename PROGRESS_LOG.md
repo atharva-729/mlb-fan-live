@@ -28,3 +28,29 @@ What got done and when. Times are local (IST). Newest entries at the bottom.
 | 02:49 | RoBERTa scoring of all 52,872 comments started on CPU (no GPU). |
 | 02:52 | Jev tick tables rebuilt from cached answers only: Jev has read about 11% of the game (pregame and most of the 1st inning). |
 | 03:00 | Written and tested: baseline readings, moment detection (Phase 4), summary writer, dashboard data export, and the dashboard itself (`web/`). 107 Python tests and the dashboard helper tests pass. |
+| 03:21 | RoBERTa scoring finished: 52,872 comments in 31.5 minutes on CPU. |
+| 03:23 | Dashboard data built: 12 moments from the baseline, 3 from Jev's partial run. One-line summaries skipped (same credit problem). Dashboard served at http://localhost:8000. |
+| 03:25 | Dashboard checked in a headless browser (light, dark, phone width, both sources). Fixed: chart library now bundled locally, name matching no longer reads "Call me a doomer" as Alex Call, mood lines smoothed. |
+| 03:27 | Phase 5 fanbase report written: `reports/fanbase_report.html`. Jev vs RoBERTa comparison added to `reports/phase2_eval.md`. |
+| 03:30 | README updated with status and run instructions. Everything committed and pushed. |
+
+## How long things took
+
+| Piece | Time |
+|---|---|
+| Phase 0 (scaffold, port) | about 30 min |
+| Phase 1 code | about 30 min |
+| Getting the Reddit data | about 5 hours end to end, of which about 3.5 hours was finding a method that worked and 83 minutes was the pull itself |
+| Jev client, questions, state builder | about 40 min |
+| Labelling page | about 20 min to build, 1 hour to label |
+| Evaluation against labels | about 5 min |
+| Tick engine | about 10 min to write; the full run is estimated at 20 min and about $3, not yet done |
+| RoBERTa baseline | 31.5 min of CPU time |
+| Moments, export, dashboard, fanbase report | about 1 hour 40 min |
+
+## Still to do
+
+- **Add OpenRouter credit, then run `ticks`, `build`, `evaluate`.** This is the only thing blocking the real Jev dashboard.
+- Fill in `config/anchors.csv` to sync the video.
+- Tune Jev's question wording using the disagreements listed in `reports/phase2_eval.md`.
+- Phase 8 (live mode on a 2026 postseason game).

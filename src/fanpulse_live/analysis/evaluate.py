@@ -94,6 +94,60 @@ def compare(items: list[dict], labels: dict[str, dict], answers: dict[str, dict[
     return tallies
 
 
+def compare_baseline(items: list[dict], labels: dict[str, dict], scores: dict[tuple[str, int], float]) -> Tally:
+    """The RoBERTa baseline against the same comment sentiment labels.
+
+    ``scores`` maps (window id, comment number) to the baseline's -1..+1
+    sentiment, put on the five-level scale the same way Jev's score is.
+    """
+    tally = Tally()
+    for item in items:
+        for k in item["label_comments"]:
+            if (item["id"], k) not in scores:
+                continue
+            human = labels[item["id"]]["comments"][str(k)]["sentiment"]
+            unit = scores[(item["id"], k)]
+            got = round(unit * 2)
+            tally.add(
+                id=item["id"], stream=item["stream"], kind=item["kind"], k=k, text=item["state"]["comments"][k - 1],
+                human=human, jev=got, score=unit, exact=got == human, within_one=abs(got - human) <= 1,
+                same_side=sign(got) == sign(human), error=abs(got - human),
+            )  # fmt: skip
+    return tally
+
+
+def baseline_section(jev: Tally, roberta: Tally) -> str:
+    """Markdown comparing the two models on comment sentiment, the only question both answer."""
+    by_key = {(r["id"], r["k"]): r for r in jev.rows}
+    pairs = [(by_key[(r["id"], r["k"])], r) for r in roberta.rows if (r["id"], r["k"]) in by_key]
+    jev_only = [(j, r) for j, r in pairs if j["same_side"] and not r["same_side"]]
+    roberta_only = [(j, r) for j, r in pairs if r["same_side"] and not j["same_side"]]
+    lines = [
+        "## Jev against the RoBERTa baseline",
+        "",
+        "Comment sentiment is the only question both models answer. RoBERTa reads the comment text alone; "
+        "Jev also sees the game, the community and the comment being replied to.",
+        "",
+        "| model | n | exact level | within one level | same side (neg/neutral/pos) | mean error (levels) |",
+        "|---|---:|---:|---:|---:|---:|",
+        f"| Jev | {len(jev)} | {jev.rate('exact'):.0%} | {jev.rate('within_one'):.0%} | {jev.rate('same_side'):.0%} | {jev.mean('error'):.2f} |",
+        f"| RoBERTa | {len(roberta)} | {roberta.rate('exact'):.0%} | {roberta.rate('within_one'):.0%} "
+        f"| {roberta.rate('same_side'):.0%} | {roberta.mean('error'):.2f} |",
+        "",
+        f"On the same comments, Jev is on the labeller's side where RoBERTa is not {len(jev_only)} times; "
+        f"RoBERTa is where Jev is not {len(roberta_only)} times.",
+        "",
+        "### Jev right, RoBERTa wrong (side)",
+        "",
+    ]
+    for j, r in jev_only:
+        lines.append(f"- human {j['human']:+d}, Jev {j['jev']:+d}, RoBERTa {r['jev']:+d}: {j['text'][:160]}")
+    lines += ["", "### RoBERTa right, Jev wrong (side)", ""]
+    for j, r in roberta_only:
+        lines.append(f"- human {j['human']:+d}, Jev {j['jev']:+d}, RoBERTa {r['jev']:+d}: {j['text'][:160]}")
+    return "\n".join(lines) + "\n"
+
+
 def report(tallies: dict[str, Tally], usage: dict[str, float]) -> str:
     """The evaluation as Markdown: a summary table, then where Jev and the labeller disagree."""
     lines = [
