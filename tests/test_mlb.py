@@ -25,6 +25,26 @@ def _play(index, half, inning, home_score, away_score, scoring=False, complete=T
             "batter": {"id": 100 + index, "fullName": f"Batter {index}"},
             "pitcher": {"id": 200, "fullName": "Pitcher"},
         },
+        "playEvents": [
+            {
+                "index": 1,
+                "type": "pitch",
+                "isPitch": True,
+                "startTime": f"2025-10-25T00:0{index}:20.000Z",
+                "endTime": f"2025-10-25T00:0{index}:30.500Z",
+                "details": {"description": "In play, no out"},
+                "count": {"balls": 0, "strikes": 1, "outs": 0},
+            },
+            {
+                "index": 0,
+                "type": "action",
+                "isPitch": False,
+                "startTime": f"2025-10-25T00:0{index}:00.000Z",
+                "endTime": f"2025-10-25T00:0{index}:05.000Z",
+                "details": {"description": "Status Change - In Progress"},
+                "count": {"balls": 0, "strikes": 0, "outs": 0},
+            },
+        ],
     }
 
 
@@ -62,6 +82,22 @@ def test_build_plays_flattens_sorts_and_parses_utc(feed):
     assert plays.loc[0, "batter_id"] == 100
     assert plays.loc[0, "end_time_utc"] == pd.Timestamp("2025-10-25T00:00:30.500Z")
     assert str(plays["start_time_utc"].dt.tz) == "UTC"
+
+
+def test_build_play_events_keeps_every_event_in_order(feed):
+    events = mlb.build_play_events(feed)
+
+    assert list(zip(events["at_bat_index"], events["event_index"]))[:4] == [(0, 0), (0, 1), (1, 0), (1, 1)]
+    assert list(events["is_pitch"][:2]) == [False, True]
+    assert events.loc[1, "description"] == "In play, no out"
+    assert events.loc[1, "strikes"] == 1
+
+
+def test_game_window_starts_at_the_first_pitch_not_the_first_action(feed):
+    first_pitch, final_out = mlb.game_window(mlb.build_plays(feed), mlb.build_play_events(feed))
+
+    assert first_pitch == pd.Timestamp("2025-10-25T00:00:20Z")
+    assert final_out == pd.Timestamp("2025-10-25T00:01:30.500Z")
 
 
 def test_build_games_uses_linescore(feed):

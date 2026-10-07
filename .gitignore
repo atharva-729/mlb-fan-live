@@ -14,9 +14,8 @@ build/
 dist/
 
 # Cached and derived data (re-fetchable / re-computable)
-data/raw/
-data/processed/
-data/ticks/
+data/
+reports/
 
 # Editor / OS
 .vscode/

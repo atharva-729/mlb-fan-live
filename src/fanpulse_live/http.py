@@ -24,6 +24,7 @@ log = logging.getLogger(__name__)
 TIMEOUT_SECONDS = 30
 MAX_RETRIES = 5
 BACKOFF_SECONDS = 1.0
+MAX_BACKOFF_SECONDS = 60.0
 MAX_RATE_LIMIT_SLEEP = 300.0
 RETRY_STATUSES = {500, 502, 503, 504}
 
@@ -82,11 +83,15 @@ def get_json(
     session: requests.Session | None = None,
     cache_if: Callable[[Any], bool] | None = None,
     retry_statuses: Collection[int] = RETRY_STATUSES,
+    max_retries: int = MAX_RETRIES,
+    backoff_seconds: float = BACKOFF_SECONDS,
 ) -> Any:
     """GET ``url`` and return parsed JSON, reading from the cache when present.
 
     ``cache_if`` lets a caller refuse to cache a response that isn't final yet
     (a game still in progress), since a cached response is never re-fetched.
+    ``max_retries`` and ``backoff_seconds`` let a caller be more patient with a
+    slow service; the wait doubles each attempt up to ``MAX_BACKOFF_SECONDS``.
     """
     path = cache_path(url, params)
     if path.exists():
@@ -97,12 +102,13 @@ def get_json(
     full = _canonical_url(url, params)
     last_error = "no attempts made"
 
-    for attempt in range(MAX_RETRIES):
+    for attempt in range(max_retries):
+        backoff = min(backoff_seconds * 2**attempt, MAX_BACKOFF_SECONDS)
         try:
             response = session.get(full, timeout=TIMEOUT_SECONDS)
         except requests.RequestException as exc:
             last_error = repr(exc)
-            delay = BACKOFF_SECONDS * 2**attempt
+            delay = backoff
         else:
             if response.status_code == 200:
                 data = response.json()
@@ -118,12 +124,12 @@ def get_json(
             if response.status_code == 429:
                 delay = _rate_limit_sleep(response, attempt)
             elif response.status_code in retry_statuses:
-                delay = BACKOFF_SECONDS * 2**attempt
+                delay = backoff
             else:
                 raise HttpError(f"GET {full} failed: {last_error}: {response.text[:200]}")
 
-        if attempt < MAX_RETRIES - 1:
+        if attempt < max_retries - 1:
             log.warning("GET %s: %s, retrying in %.1fs", full, last_error, delay)
             time.sleep(delay)
 
-    raise HttpError(f"GET {full} failed after {MAX_RETRIES} attempts: {last_error}")
+    raise HttpError(f"GET {full} failed after {max_retries} attempts: {last_error}")

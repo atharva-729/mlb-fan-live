@@ -89,10 +89,17 @@ def test_ingest_threads_combines_all_threads(monkeypatch, tmp_path):
     monkeypatch.setenv("FANPULSE_LIVE_DATA_DIR", str(tmp_path))
     monkeypatch.setattr(reddit, "fetch_threads_by_id", lambda ids: [_post("gt", "baseball"), _post("pg", "Dodgers")])
     by_thread = {"gt": [_comment("a", 10), _comment("b", 11)], "pg": [_comment("c", 20)]}
-    monkeypatch.setattr(reddit, "fetch_comments", lambda thread_id, created: by_thread[thread_id])
 
-    tables = reddit.ingest_threads(1, THREADS)
+    def fake_fetch(thread_id, created, on_page=None):
+        on_page(len(by_thread[thread_id]))
+        return by_thread[thread_id]
 
+    monkeypatch.setattr(reddit, "fetch_comments", fake_fetch)
+    progress = []
+
+    tables = reddit.ingest_threads(1, THREADS, lambda thread_id, count: progress.append((thread_id, count)))
+
+    assert progress == [("gt", 2), ("pg", 1)]
     assert list(tables["comments_raw"]["subreddit"]) == ["baseball", "baseball", "Dodgers"]
     assert (tmp_path / "processed" / "comments_raw" / "1.parquet").exists()
     assert (tmp_path / "processed" / "threads" / "1.parquet").exists()

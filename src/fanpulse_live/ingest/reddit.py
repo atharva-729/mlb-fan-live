@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import Any
+from typing import Any, Callable
 
 import pandas as pd
 
@@ -21,8 +21,12 @@ BASE_URL = "https://arctic-shift.photon-reddit.com"
 
 PAGE_SIZE = 100
 REQUEST_SPACING_SECONDS = 0.5
-# Arctic Shift answers 422 when a query times out on its side; a retry usually works.
+# Arctic Shift answers 422 when a query times out on its side. A retry usually
+# works, so wait 5s, 10s, 20s, 40s, 60s. Past that the service is having a bad
+# spell and the caller should back off for longer.
 RETRY_STATUSES = http.RETRY_STATUSES | {422}
+MAX_RETRIES = 6
+BACKOFF_SECONDS = 5.0
 # num_comments and score only settle about 36 hours after posting, so younger
 # threads are fetched but not cached.
 SETTLED_AFTER_SECONDS = 48 * 3600
@@ -50,7 +54,14 @@ class ThreadLookupError(LookupError):
 def _get(path: str, params: dict[str, Any], *, settled: bool) -> list[dict]:
     url = f"{BASE_URL}{path}"
     was_cached = http.cache_path(url, params).exists()
-    response = http.get_json(url, params, cache_if=lambda _: settled, retry_statuses=RETRY_STATUSES)
+    response = http.get_json(
+        url,
+        params,
+        cache_if=lambda _: settled,
+        retry_statuses=RETRY_STATUSES,
+        max_retries=MAX_RETRIES,
+        backoff_seconds=BACKOFF_SECONDS,
+    )
     if not was_cached:
         time.sleep(REQUEST_SPACING_SECONDS)
     return response.get("data") or []
@@ -70,12 +81,15 @@ def fetch_threads_by_id(thread_ids: list[str]) -> list[dict]:
     return [by_id[thread_id] for thread_id in thread_ids]
 
 
-def fetch_comments(thread_id: str, thread_created_utc: float) -> list[dict]:
+def fetch_comments(
+    thread_id: str, thread_created_utc: float, on_page: Callable[[int], None] | None = None
+) -> list[dict]:
     """All comments in a thread, oldest first.
 
     ``after`` is exclusive and comments often share a second, so each page
     starts one second back from the last comment seen and duplicates are
-    dropped by id. Paging stops when a page brings nothing new.
+    dropped by id. Paging stops when a page brings nothing new. ``on_page`` is
+    called after every page with the number of comments fetched so far.
     """
     settled = _is_settled(thread_created_utc)
     seen: dict[str, dict] = {}
@@ -95,6 +109,8 @@ def fetch_comments(thread_id: str, thread_created_utc: float) -> list[dict]:
         new = [c for c in page if c["id"] not in seen]
         for comment in new:
             seen[comment["id"]] = comment
+        if on_page is not None:
+            on_page(len(seen))
         if not page:
             break
 
@@ -157,13 +173,20 @@ def build_comments(comments: list[dict], thread_id: str, subreddit: str) -> pd.D
     return frame
 
 
-def ingest_threads(game_pk: int, threads: list[dict]) -> dict[str, pd.DataFrame]:
-    """Pull every configured thread (all subreddits, game and postgame) for one game."""
+def ingest_threads(
+    game_pk: int, threads: list[dict], on_progress: Callable[[str, int], None] | None = None
+) -> dict[str, pd.DataFrame]:
+    """Pull every configured thread (all subreddits, game and postgame) for one game.
+
+    ``on_progress`` is called after every page with the thread id and its
+    comment count so far.
+    """
     posts = fetch_threads_by_id([t["id"] for t in threads])
 
     frames = []
     for post in posts:
-        comments = fetch_comments(post["id"], post["created_utc"])
+        on_page = None if on_progress is None else (lambda n, thread_id=post["id"]: on_progress(thread_id, n))
+        comments = fetch_comments(post["id"], post["created_utc"], on_page)
         log.info("r/%s thread %s: %d comments", post["subreddit"], post["id"], len(comments))
         frames.append(build_comments(comments, post["id"], post["subreddit"]))
 

@@ -1,6 +1,6 @@
 """MLB Stats API: schedule lookup, live feed, win probability.
 
-Builds the ``games``, ``plays`` and ``win_prob`` tables. All timestamps are UTC.
+Builds the ``games``, ``plays``, ``play_events`` and ``win_prob`` tables. All timestamps are UTC.
 """
 
 from __future__ import annotations
@@ -147,6 +147,40 @@ def build_plays(feed: dict) -> pd.DataFrame:
     return plays.sort_values("at_bat_index").reset_index(drop=True)
 
 
+def build_play_events(feed: dict) -> pd.DataFrame:
+    """One row per ``playEvents`` entry: every pitch, pickoff and action, with its own times."""
+    game_pk = feed["gameData"]["game"]["pk"]
+    rows: list[dict[str, Any]] = []
+    for play in feed["liveData"]["plays"]["allPlays"]:
+        for event in play["playEvents"]:
+            count = event.get("count", {})
+            rows.append(
+                {
+                    "game_pk": game_pk,
+                    "at_bat_index": play["about"]["atBatIndex"],
+                    "event_index": event["index"],
+                    "type": event["type"],
+                    "is_pitch": bool(event["isPitch"]),
+                    "start_time_utc": event["startTime"],
+                    "end_time_utc": event["endTime"],
+                    "description": event["details"].get("description"),
+                    "balls": count.get("balls"),
+                    "strikes": count.get("strikes"),
+                    "outs": count.get("outs"),
+                }
+            )
+    events = pd.DataFrame(rows)
+    for column in ("start_time_utc", "end_time_utc"):
+        events[column] = pd.to_datetime(events[column], utc=True)
+    return events.sort_values(["at_bat_index", "event_index"]).reset_index(drop=True)
+
+
+def game_window(plays: pd.DataFrame, play_events: pd.DataFrame) -> tuple[pd.Timestamp, pd.Timestamp]:
+    """First pitch and final out, from the feed's own times."""
+    first_pitch = play_events.loc[play_events["is_pitch"], "start_time_utc"].min()
+    return first_pitch, plays["end_time_utc"].max()
+
+
 def build_win_prob(game_pk: int, win_probability: list[dict]) -> pd.DataFrame:
     """Home win probability before and after each plate appearance, on a 0..1 scale.
 
@@ -170,7 +204,7 @@ def build_win_prob(game_pk: int, win_probability: list[dict]) -> pd.DataFrame:
 
 
 def ingest_game(game_pk: int) -> dict[str, pd.DataFrame]:
-    """Fetch (or read from cache) one finished game and write its three parquet tables."""
+    """Fetch (or read from cache) one finished game and write its parquet tables."""
     feed = fetch_feed(game_pk)
     if not _is_final(feed["gameData"]["status"]):
         state = feed["gameData"]["status"].get("detailedState")
@@ -179,6 +213,7 @@ def ingest_game(game_pk: int) -> dict[str, pd.DataFrame]:
     tables = {
         "games": build_games(feed, fetch_series_desc(game_pk)),
         "plays": build_plays(feed),
+        "play_events": build_play_events(feed),
         "win_prob": build_win_prob(game_pk, fetch_win_probability(game_pk)),
     }
 
