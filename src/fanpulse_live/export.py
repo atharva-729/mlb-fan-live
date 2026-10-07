@@ -81,7 +81,8 @@ def game_file(timeline: GameTimeline, times: list[datetime], season_lines: dict[
 
     lines: dict[str, list] = {}
     for play in timeline.plays:
-        for player_id in (play.batter_id, play.pitcher_id):
+        # A reliever can let in runs charged to the pitcher he replaced, whose line changes too.
+        for player_id in dict.fromkeys((play.batter_id, play.pitcher_id, *play.earned_runs)):
             line = timeline.player_line(player_id, play.end)
             entries = lines.setdefault(timeline.name(player_id), [])
             if line and (not entries or entries[-1][1] != line):

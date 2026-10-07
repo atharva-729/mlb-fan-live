@@ -145,6 +145,7 @@ def test_export_aligns_everything_to_the_updates(timeline, tmp_path):
     assert all(len(series) == len(times) for series in game["state"].values())
     assert game["state"]["status"][0] == "pregame" and game["state"]["status"][-1] == "final"
     assert game["players"]["Hal Homer"]["lines"][-1][1] == "1-for-1, HR, RBI"
+    assert game["players"]["Vic Visitor"]["lines"][-1][1] == "0.0 IP, 1 ER, 1 H, 0 BB, 0 K"
     assert comment_data["t"] == sorted(comment_data["t"])
     assert len(data["ticks"]["r/Dodgers"]["mood"]) == len(times)
     assert len(data["tags"]["subject"]) == len(comment_data["t"])
