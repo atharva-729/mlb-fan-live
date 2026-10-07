@@ -85,6 +85,57 @@ def test_fetch_comments_pages_an_archive_whose_after_is_inclusive(monkeypatch):
     assert all(url == reddit.PULLPUSH.url and trim and spacing == 3.0 for url, _, trim, spacing in calls)
 
 
+def _archive(everything, requests_made):
+    """A fake Arctic Shift: ``after`` and ``before`` both exclude their own second."""
+
+    def fake_get(url, params, **kwargs):
+        requests_made.append((params.get("after"), params.get("before")))
+        matching = [
+            c
+            for c in everything
+            if params.get("after", -1) < c["created_utc"] < params.get("before", 10**12)
+            and ("link_id" not in params or c["link_id"] == f"t3_{params['link_id']}")
+        ]
+        return matching[: params["limit"]]
+
+    return fake_get
+
+
+def test_fetch_subreddit_comments_walks_windows_and_pages_inside_them(monkeypatch):
+    monkeypatch.setattr(reddit, "PAGE_SIZE", 2)
+    monkeypatch.setattr(reddit, "WINDOW_SECONDS", 10)
+    everything = [_comment(name, second) for name, second in [("a", 100), ("b", 103), ("c", 103), ("d", 109), ("e", 110), ("f", 125)]]
+    requests_made = []
+    monkeypatch.setattr(reddit, "_get", _archive(everything, requests_made))
+
+    comments = reddit.fetch_subreddit_comments("baseball", 100, 130)
+
+    assert [c["id"] for c in comments] == ["a", "b", "c", "d", "e", "f"]
+    # The first window needs four pages; a comment exactly on a window edge (110) belongs to the next one.
+    assert requests_made == [(99, 110), (102, 110), (102, 110), (103, 110), (109, 120), (119, 130)]
+
+
+def test_ingest_threads_by_window_keeps_only_each_threads_comments(monkeypatch, tmp_path):
+    monkeypatch.setenv("FANPULSE_LIVE_DATA_DIR", str(tmp_path))
+    posts = [dict(_post("gt", "baseball"), created_utc=100), dict(_post("pg", "Dodgers"), created_utc=150)]
+    monkeypatch.setattr(reddit, "fetch_threads_by_id", lambda ids: posts)
+    everything = [
+        dict(_comment("a", 105), link_id="t3_gt"),
+        dict(_comment("x", 106), link_id="t3_some_other_post"),
+        dict(_comment("b", 140), link_id="t3_gt"),
+        dict(_comment("late", 500), link_id="t3_gt"),  # after end_utc: not fetched
+        dict(_comment("p", 160), link_id="t3_pg"),
+    ]
+    monkeypatch.setattr(reddit, "_get", _archive(everything, []))
+    progress = {}
+
+    tables = reddit.ingest_threads_by_window(1, THREADS, 200, lambda thread_id, n: progress.update({thread_id: n}))
+
+    raw = tables["comments_raw"]
+    assert list(zip(raw["comment_id"], raw["thread_id"])) == [("a", "gt"), ("b", "gt"), ("p", "pg")]
+    assert progress == {"gt": 2, "pg": 1}
+
+
 def test_read_dump_comments_streams_only_the_wanted_threads(tmp_path):
     import json
 
