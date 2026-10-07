@@ -124,7 +124,9 @@ def get_json(
             if response.status_code == 429:
                 delay = _rate_limit_sleep(response, attempt)
             elif response.status_code in retry_statuses:
-                delay = backoff
+                # A service that says when its rate-limit window resets is asking us to wait that long.
+                told_when = any(h in response.headers for h in ("X-RateLimit-Reset", "Retry-After"))
+                delay = _rate_limit_sleep(response, attempt) if told_when else backoff
             else:
                 raise HttpError(f"GET {full} failed: {last_error}: {response.text[:200]}")
 

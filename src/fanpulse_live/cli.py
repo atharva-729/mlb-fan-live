@@ -81,7 +81,7 @@ def cmd_show_config(args: argparse.Namespace) -> int:
     return 0
 
 
-PULL_RETRY_WAIT_SECONDS = 300
+PULL_RETRY_WAIT_SECONDS = 120
 
 
 def _write_pull_progress(threads: list[dict], fetched: dict[str, int], status: str) -> None:

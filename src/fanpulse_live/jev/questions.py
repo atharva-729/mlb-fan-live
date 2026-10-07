@@ -24,15 +24,6 @@ MOOD_LEVELS = [
     "Elation: celebrating, thrilled with their team",
 ]
 
-# For a crowd with no team in the game, mood means how good the game is to watch.
-NEUTRAL_MOOD_LEVELS = [
-    "Miserable: hating this game or wishing it were over",
-    "Unimpressed: bored, annoyed or disappointed by the game",
-    "Neutral or mixed: no clear feeling about the game",
-    "Enjoying it: entertained and engaged",
-    "Thrilled: amazed, this is a great game or a great moment",
-]
-
 EMOTIONS = {
     "joy": "Celebration, delight or relief.",
     "anger": "Fury, blame or disgust.",
@@ -79,23 +70,22 @@ def subject_options(timeline: GameTimeline) -> dict[str, str | None]:
 
 
 def window_questions(team_name: str | None, subjects: dict[str, str | None]) -> dict[str, dict]:
-    """The five questions answered about the whole window. ``team_name`` is None for a neutral crowd."""
+    """The questions answered about the whole window.
+
+    ``team_name`` is None for a neutral crowd, which gets no mood question:
+    mood is a fanbase's feeling about its own team, and these commenters have
+    no team in the game.
+    """
+    mood = {}
     if team_name:
-        mood = {
+        mood["mood"] = {
             "type": "score",
             "instructions": f"Taking the comments together, how do these {team_name} fans feel about how the game "
             f"is going for the {team_name} right now? {SARCASM_NOTE}",
             "criteria": MOOD_LEVELS,
         }
-    else:
-        mood = {
-            "type": "score",
-            "instructions": f"Taking the comments together, how much is this neutral crowd enjoying the game "
-            f"right now? {SARCASM_NOTE}",
-            "criteria": NEUTRAL_MOOD_LEVELS,
-        }
     return {
-        "mood": mood,
+        **mood,
         "target": {
             "type": "choice",
             "instructions": "Who or what are most of the comments about?",
