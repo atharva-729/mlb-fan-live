@@ -50,6 +50,12 @@ def build_parser() -> argparse.ArgumentParser:
     lag = subparsers.add_parser("lag", help="measure how long after a play each stream reacts")
     lag.set_defaults(func=cmd_lag)
 
+    state = subparsers.add_parser("state", help="print the state Jev would see for one stream at one moment")
+    state.add_argument("--at", required=True, help="UTC time, e.g. 2025-10-25T02:33:10Z")
+    state.add_argument("--stream", required=True, help='stream id, e.g. "r/Dodgers"')
+    state.add_argument("--ask", action="store_true", help="also send it to Jev and print the answers")
+    state.set_defaults(func=cmd_state)
+
     return parser
 
 
@@ -314,6 +320,67 @@ def cmd_lag(args: argparse.Namespace) -> int:
         charts.lag_figure(curves, {k: s["baseline"] for k, s in stats.items()}), f"{game_pk}_reaction_lag.html"
     )
     print(f"Chart: {path}")
+    return 0
+
+
+def cmd_state(args: argparse.Namespace) -> int:
+    import json
+
+    from fanpulse_live import config, gamestate
+    from fanpulse_live.engine import calls, window
+    from fanpulse_live.jev import client, questions
+
+    loaded = config.load_game()
+    game_pk = loaded["game"]["game_pk"]
+    streams = {s["id"]: s for s in loaded["streams"]}
+    if args.stream not in streams:
+        print(f"unknown stream {args.stream!r}; choose from: {', '.join(streams)}", file=sys.stderr)
+        return 1
+    tables = _load_tables(game_pk, ("comments", "comments_raw"))
+    if tables is None:
+        return 1
+
+    timeline = gamestate.load_timeline(game_pk)
+    comments = tables["comments"]
+    in_stream = comments[(comments["stream"] == args.stream) & (comments["thread_type"] == "game")]
+    call = calls.prepare_call(
+        timeline,
+        gamestate.parse_time(args.at),
+        streams[args.stream],
+        in_stream.sort_values("created_utc"),
+        window.parent_bodies(tables["comments_raw"]),
+        questions.subject_options(timeline),
+        loaded,
+    )
+
+    print(json.dumps(call.state, indent=2, ensure_ascii=False))
+    sizes = ", ".join(str(len(batch)) for batch in call.question_batches)
+    print(
+        f"\n{len(call.window.comments)} comments in a {call.window.window_used_s}s window, "
+        f"{len(call.new_numbers)} new; stale: {call.window.stale}; questions per call: {sizes}"
+    )
+    if not args.ask:
+        return 0
+    if call.window.stale:
+        print("Stale window: the engine would skip this call and carry the last reading forward.")
+        return 0
+
+    for batch in call.question_batches:
+        result = client.ask(call.state, batch)
+        usage = result["usage"]
+        print(
+            f"\nJev: {usage['input_tokens']} input tokens, ${usage['cost']:.6f}, "
+            f"{result['latency_s']}s{' (cached)' if result['cached'] else ''}"
+        )
+        for name, answer in result["answers"].items():
+            if answer["type"] == "noul":
+                print(f"  {name:<8} P(yes) {answer['noul']:.2f}")
+            elif answer["type"] == "score":
+                print(f"  {name:<8} {questions.score_to_unit(answer):+.2f}  (confidence {answer['confidence']:.2f})")
+            else:
+                top = sorted(answer["probabilities"].items(), key=lambda kv: -kv[1])[:3]
+                ranked = ", ".join(f"{option} {p:.2f}" for option, p in top if p > 0)
+                print(f"  {name:<8} {ranked}")
     return 0
 
 
