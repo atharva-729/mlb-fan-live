@@ -43,8 +43,11 @@ def _clean(value):
     return None if value is None or (isinstance(value, float) and value != value) or value is pd.NA else value
 
 
-def game_file(timeline: GameTimeline, times: list[datetime]) -> dict:
-    """The scoreboard at every update, the plays, and each player's running line for today."""
+def game_file(timeline: GameTimeline, times: list[datetime], season_lines: dict[str, str] | None = None) -> dict:
+    """The scoreboard at every update, the plays, and each player's lines: today's, running, and the season's.
+
+    The season lines are for display beside fan sentiment. They are never sent to a model.
+    """
     keys = ("status", "inning", "half", "outs", "balls", "strikes", "home", "away", "runners", "batter", "pitcher", "wp")
     state = {key: [] for key in keys}
     for t in times:
@@ -84,7 +87,7 @@ def game_file(timeline: GameTimeline, times: list[datetime]) -> dict:
             if line and (not entries or entries[-1][1] != line):
                 entries.append([_epoch(play.end), line])
     players = {
-        p.name: {"team": p.team, "lines": lines.get(p.name, [])}
+        p.name: {"team": p.team, "lines": lines.get(p.name, []), "season": (season_lines or {}).get(p.name)}
         for p in sorted(timeline.players.values(), key=lambda p: p.name)
     }
     return {"state": state, "plays": plays, "players": players}

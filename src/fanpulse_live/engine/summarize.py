@@ -76,9 +76,11 @@ def build_prompt(
         notes = []
         if readings["mood"].notna().any():
             notes.append(f"mood {readings['mood'].mean():+.2f} on a -1 to +1 scale")
-        if len(readings):
-            notes.append("dominant emotion " + ", ".join(sorted(set(readings["emotion"]))))
-            notes.append("mostly about " + ", ".join(sorted(set(readings["target"]))))
+        # The baseline has no emotion reading and often no subject.
+        for label, column in (("dominant emotion", "emotion"), ("mostly about", "target")):
+            values = sorted(set(readings[column].dropna()))
+            if values:
+                notes.append(f"{label} {', '.join(values)}")
         bodies = [clean_text(body, 200) for body in inside["body"]]
         sample = rng.sample(bodies, min(COMMENTS_PER_FANBASE, len(bodies)))
         sections.append(

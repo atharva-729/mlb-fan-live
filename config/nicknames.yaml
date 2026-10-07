@@ -1,9 +1,23 @@
-# Player nickname -> MLB person ID ("Sho", "Vladdy", "Doc"). Filled in Phase 2,
-# from the game's rosters.
-#
-# Example shape:
-#
-# nicknames:
-#   "<nickname>": <mlb person id>
+# Player nickname -> MLB person ID. Used by the baseline's name matching and
+# available to the Jev state's rosters. Only names fans actually type; anything
+# that is also an ordinary word ("Bo", "Max") is left out.
 
-nicknames: {}
+nicknames:
+  Vladdy: 665489        # Vladimir Guerrero Jr.
+  Vlad: 665489
+  Vladdy Jr: 665489
+  Shotime: 660271       # Shohei Ohtani
+  Teo: 606192           # Teoscar Hernández
+  Teoscar: 606192
+  Kike: 571771          # Enrique Hernández
+  Kiké: 571771
+  Yoshi: 808967         # Yoshinobu Yamamoto
+  Kersh: 477132         # Clayton Kershaw
+  IKF: 643396           # Isiah Kiner-Falefa
+  Mookie: 605141        # Mookie Betts
+  Freddie: 518692       # Freddie Freeman
+  Bichette: 666182
+  Springer Dinger: 543807
+  Roki: 808963          # Roki Sasaki
+  Yesavage: 702056
+  Varshow: 662139       # Daulton Varsho

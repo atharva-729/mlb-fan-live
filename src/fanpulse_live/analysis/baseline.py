@@ -23,6 +23,9 @@ BATCH_SIZE = 64
 MAX_TOKENS = 128
 # First names shorter than this are too likely to be ordinary words or shared ("Will", "Max").
 MIN_FIRST_NAME = 6
+# Surnames that are also everyday words. "Call me a doomer" is not about Alex
+# Call, so these players are matched by full name or nickname only.
+ORDINARY_WORDS = {"call", "little", "france", "dean", "straw"}
 
 
 def score_texts(texts: list[str], on_progress: Callable[[int, int], None] | None = None) -> np.ndarray:
@@ -83,10 +86,10 @@ def name_patterns(timeline: GameTimeline, nicknames: dict[str, int] | None = Non
 
     aliases: dict[str, set[str]] = {player.name: {_plain(player.name)} for player in players}
     for surname, owners in surnames.items():
-        if len(owners) == 1:
+        if len(owners) == 1 and surname not in ORDINARY_WORDS:
             aliases[owners[0]].add(surname)
     for first, owners in first_names.items():
-        if len(owners) == 1 and len(first) >= MIN_FIRST_NAME and first not in surnames:
+        if len(owners) == 1 and len(first) >= MIN_FIRST_NAME and first not in surnames and first not in ORDINARY_WORDS:
             aliases[owners[0]].add(first)
     names_by_id = {player.id: player.name for player in players}
     for nickname, player_id in (nicknames or {}).items():

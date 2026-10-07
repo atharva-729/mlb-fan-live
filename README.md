@@ -21,6 +21,45 @@ Every 5 seconds, it looks at what fans in each community said over the last ~20 
 
 ---
 
+## Status and how to run (8 Oct 2026)
+
+| Phase | State |
+|---|---|
+| 0 Setup, 1 Data | Done. 52,872 cleaned comments across the six threads; reaction lag measured. |
+| 2 Jev client, questions, evaluation | Done against 40 hand-labelled windows and 114 comments (`reports/phase2_eval.md`). Question wording not tuned yet. |
+| 3 Every tick through Jev | **11% done, waiting for OpenRouter credit.** The answers so far are cached. |
+| 4 Moments and summaries | Moments done. One-line summaries need the same credit. |
+| 5 Fanbase report | Done on the baseline (`reports/fanbase_report.html`). |
+| 6 Video sync | Code done; needs `config/anchors.csv` filled in by hand. |
+| 7 Replay dashboard | Done, running on the baseline until the Jev run finishes. |
+| 8 Live mode | Not started. |
+
+**The baseline.** Until Jev has read the whole game, the dashboard runs on a free local stand-in: RoBERTa sentiment per comment, name matching for who a comment is about, and comment-volume spikes for moments. It reads tone only, with no game context, so it scores "LET'S FUCKING GO" as negative and cannot follow "he" or "this guy". The dashboard's "Readings from" menu switches between it and Jev.
+
+**See the dashboard**
+
+```
+C:\Users\91821\.venvs\mlb-fan-live\Scripts\fanpulse-live.exe serve
+```
+
+then open http://localhost:8000. It has its own clock: Play, a speed menu, a scrubber, and buttons that jump between moments.
+
+**Finish the Jev run once the account has credit** (about $3; resumes from the cache, roughly 20 minutes):
+
+```
+fanpulse-live ticks        # every 5-second update through Jev
+fanpulse-live build        # moments, summaries, dashboard data; Jev becomes the default source
+fanpulse-live evaluate     # refresh the accuracy tables
+```
+
+**Sync the video.** Add one row per half-inning to `config/anchors.csv` with the video time, in seconds, of that half-inning's first pitch (`T1,754` for the top of the 1st), then run `fanpulse-live build`. The dashboard then follows the YouTube player.
+
+**All commands:** `pull`, `volume`, `lag`, `state`, `label-sheet`, `evaluate`, `ticks`, `baseline-scores`, `build`, `fanbase-report`, `serve`. Run any with `--help`.
+
+**Where the comments came from.** Arctic Shift times out when asked for a whole game thread, so `pull` reads each game thread out of its subreddit in 5-minute windows. PullPush refuses bulk pulls. `pull --dump` can read a local Reddit dump file instead.
+
+---
+
 ## Data sources (verified Oct 2026)
 
 ### Game

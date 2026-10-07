@@ -22,3 +22,6 @@ reports/
 .idea/
 .DS_Store
 Thumbs.db
+
+# Dashboard data (rebuilt by `fanpulse-live build`; contains comment text)
+web/data/
