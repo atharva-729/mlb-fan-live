@@ -30,7 +30,7 @@ Every 5 seconds, it looks at what fans in each community said over the last ~20 
 | 3 Every tick through Jev | Done: 12,175 readings, 40,354 comments tagged, about $1.20 of Jev calls in 14 minutes. |
 | 4 Moments and summaries | Done: 12 moments, each with a one-line summary per fanbase. |
 | 5 Fanbase report | Done on the baseline (`reports/fanbase_report.html`). |
-| 6 Video sync | Done: 20 sync points in `config/anchors.csv`, 16 marked by hand and 4 estimated (around the 6th inning). |
+| 6 Video sync | **Working but late: the dashboard runs at least 30 seconds behind the video.** Must be fixed before going further; see `PROGRESS_LOG.md`. 20 sync points in `config/anchors.csv`, 16 marked by hand and 4 estimated. |
 | 7 Replay dashboard | Done, on Jev's readings, with the baseline selectable for comparison. |
 | 8 Live mode | Not started. |
 

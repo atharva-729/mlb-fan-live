@@ -53,6 +53,8 @@ What got done and when. Times are local (IST). Newest entries at the bottom.
 | 00:27 | Atharva marked the first pitch of all 17 half-innings. |
 | ~00:50 | Anchors checked against the game clock: 15 consistent; the two 6th-inning marks were not, and mid-inning pitching changes turned out to be cut from the video too. Sync points extended to pitching changes; four points estimated. Video now synced and published. |
 
+| 9 Oct | Project parked. Open bug: the dashboard runs at least 30 seconds behind the video (see "Must fix" below). |
+
 ## How long things took
 
 | Piece | Time |
@@ -68,6 +70,16 @@ What got done and when. Times are local (IST). Newest entries at the bottom.
 | Moments, export, dashboard, fanbase report | about 1 hour 40 min |
 
 ## Still to do
+
+### Must fix before going further
+
+- **The dashboard runs at least 30 seconds behind the video.** Reported by Atharva on 9 Oct 2026 after watching the synced dashboard against the YouTube video: the dashboard's timings are at least 30 seconds late. Not investigated yet. Things to check first, none of them confirmed:
+  - whether the lag is the same everywhere or only after the four estimated anchors (top of the 6th and the three mid-inning pitching changes);
+  - whether it is the scoreboard that is late or only the comments and moments. Fans post 45-75 seconds after a play, so comments and moment cards are expected to trail the video; the scoreboard is not;
+  - whether the MLB feed's pitch `startTime`, which the anchors are matched to, is itself later than the moment the pitch is thrown on screen;
+  - whether the video cuts more than inning breaks and pitching changes (replay reviews, mound visits, injuries), which would need more sync points.
+
+### Other
 
 - Check the four estimated video anchors (top of the 6th, and the three mid-inning pitching changes) on `anchors.html`.
 - Tune Jev's question wording using the disagreements listed in `reports/phase2_eval.md`.
