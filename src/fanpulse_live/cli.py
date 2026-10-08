@@ -93,6 +93,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     serve = subparsers.add_parser("serve", help="serve the dashboard at http://localhost:8000")
     serve.add_argument("--port", type=int, default=8000)
+    serve.add_argument(
+        "--lan",
+        action="store_true",
+        help="also accept connections from other devices on the same network (default: this computer only)",
+    )
     serve.set_defaults(func=cmd_serve)
 
     scores = subparsers.add_parser("baseline-scores", help="score every comment with the local RoBERTa baseline")
@@ -850,7 +855,14 @@ def cmd_serve(args: argparse.Namespace) -> int:
     web = config.PROJECT_ROOT / "web"
     handler = functools.partial(http.server.SimpleHTTPRequestHandler, directory=str(web))
     print(f"Fan Pulse Live dashboard: http://localhost:{args.port}  (Ctrl+C to stop)")
-    with http.server.ThreadingHTTPServer(("127.0.0.1", args.port), handler) as server:
+    if args.lan:
+        import socket
+
+        # The address other devices reach this computer on: the one used for outbound traffic.
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
+            probe.connect(("10.255.255.255", 1))
+            print(f"From another device on this network: http://{probe.getsockname()[0]}:{args.port}")
+    with http.server.ThreadingHTTPServer(("0.0.0.0" if args.lan else "127.0.0.1", args.port), handler) as server:
         try:
             server.serve_forever()
         except KeyboardInterrupt:
