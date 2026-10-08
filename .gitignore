@@ -14,7 +14,7 @@ build/
 dist/
 
 # Cached and derived data (re-fetchable / re-computable)
-data/
+/data/
 reports/
 
 # Editor / OS

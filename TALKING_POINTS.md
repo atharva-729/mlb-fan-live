@@ -7,7 +7,7 @@ Notes for presenting the dashboard as of the evening of 8 Oct 2026: the full gam
 1. **Game data** comes from MLB's free Stats API: every pitch, play and win probability, with timestamps.
 2. **Fan data** is 52,872 Reddit comments from three communities: r/Dodgers, r/Torontobluejays, and r/baseball split by team flair into Dodgers fans, Blue Jays fans and neutrals.
 3. **Every 5 seconds** of game time, each community's last 20 seconds of comments get a reading: mood, who they're talking about, and whether they're reacting to something.
-4. **The readings come from Jev**, which is told the score, the recent plays and whose fans are talking. A free stand-in (RoBERTa sentiment plus name matching) is in the "Readings from" menu for comparison. The full game cost about $1.27 of Jev calls.
+4. **The readings come from Jev**, which is told the score, the recent plays and whose fans are talking. A free stand-in (RoBERTa sentiment plus name matching) is in the "Readings from" menu for comparison. The full game cost about $1.20 of Jev calls.
 5. **Everything is precomputed**, so the dashboard looks things up by clock time. That is why scrubbing and 60× speed respond instantly.
 
 ## How moments are detected
@@ -38,7 +38,7 @@ With Jev, a spike only counts if Jev also says the crowd is reacting to one spec
 | Moments | Volume only. | Volume plus "are they reacting to one thing". |
 | One-line summaries | None. | Written per fanbase for each moment, by a small text model. |
 
-Measured cost was about $1.27 for this game, at about half a second per call, after capping what each call carries (at most 30 comments shown and 10 tagged per update).
+Measured cost was about $1.20 for this game, at about half a second per call, after capping what each call carries (at most 30 comments shown and 10 tagged per update).
 
 **One point to be straight about.** On the 114 hand-labelled comments, untuned Jev did not beat RoBERTa at plain comment sentiment: both were within one level of the labeller about 84–85% of the time, and RoBERTa matched the negative/neutral/positive side more often (61% against 51%). Jev's measured edge is elsewhere: it picked the labeller's subject for 59% of comments (89% in its top three) and agreed on "is this a moment" for 82% of windows, neither of which RoBERTa can do. Tuning the question wording is the next step. Full tables are in `reports/phase2_eval.md`.
 
