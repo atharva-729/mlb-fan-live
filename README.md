@@ -30,7 +30,7 @@ Every 5 seconds, it looks at what fans in each community said over the last ~20 
 | 3 Every tick through Jev | Done: 12,175 readings, 40,354 comments tagged, about $1.20 of Jev calls in 14 minutes. |
 | 4 Moments and summaries | Done: 12 moments, each with a one-line summary per fanbase. |
 | 5 Fanbase report | Done on the baseline (`reports/fanbase_report.html`). |
-| 6 Video sync | Code done; needs `config/anchors.csv` filled in by hand. |
+| 6 Video sync | Done: 20 sync points in `config/anchors.csv`, 16 marked by hand and 4 estimated (around the 6th inning). |
 | 7 Replay dashboard | Done, on Jev's readings, with the baseline selectable for comparison. |
 | 8 Live mode | Not started. |
 
@@ -56,7 +56,7 @@ fanpulse-live evaluate     # refresh the accuracy tables
 
 **Publish it.** `.github/workflows/pages.yml` deploys the `web/` folder to GitHub Pages on every push. One-time setup: make the repository public, then Settings → Pages → Source: "GitHub Actions".
 
-**Sync the video.** Add one row per half-inning to `config/anchors.csv` with the video time, in seconds, of that half-inning's first pitch (`T1,754` for the top of the 1st), then run `fanpulse-live build`. The dashboard then follows the YouTube player.
+**Sync the video.** The game video cuts every break, between half-innings and at mid-inning pitching changes, so it needs one anchor after each: the video time, in seconds, of the first pitch after the break. Open `anchors.html` on the dashboard site, mark them with one button press each, save the downloaded file as `config/anchors.csv` and run `fanpulse-live build`. Codes are `T1`/`B6` for half-innings and `B6P1` for the first mid-inning pitching change of the bottom of the 6th. The build warns about anchors that cannot be right.
 
 **All commands:** `pull`, `volume`, `lag`, `state`, `label-sheet`, `evaluate`, `ticks`, `baseline-scores`, `build`, `fanbase-report`, `serve`. Run any with `--help`.
 
