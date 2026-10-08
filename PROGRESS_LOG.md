@@ -44,6 +44,15 @@ What got done and when. Times are local (IST). Newest entries at the bottom.
 | 20:43 | Full Jev run complete: 12,175 readings, 40,354 comments tagged, 14 minutes of run time. Jev spend: $1.15 on the key in total by OpenRouter's count (run, test calls and summaries); the local log adds up to $1.27. |
 | 20:46 | Dashboard rebuilt on Jev: 12 moments, each with one-line fanbase summaries. Jev is now the default source. |
 
+## 2026-10-09
+
+| Time | What |
+|---|---|
+| (8 Oct, ~21:10) | Dashboard published at https://atharva-729.github.io/mlb-fan-live/ through GitHub Pages. |
+| (8 Oct, ~21:25) | Video sync helper page added (`anchors.html`). |
+| 00:27 | Atharva marked the first pitch of all 17 half-innings. |
+| ~00:50 | Anchors checked against the game clock: 15 consistent; the two 6th-inning marks were not, and mid-inning pitching changes turned out to be cut from the video too. Sync points extended to pitching changes; four points estimated. Video now synced and published. |
+
 ## How long things took
 
 | Piece | Time |
@@ -60,7 +69,6 @@ What got done and when. Times are local (IST). Newest entries at the bottom.
 
 ## Still to do
 
-- Make the repository public and enable GitHub Pages to publish the dashboard.
-- Fill in `config/anchors.csv` to sync the video.
+- Check the four estimated video anchors (top of the 6th, and the three mid-inning pitching changes) on `anchors.html`.
 - Tune Jev's question wording using the disagreements listed in `reports/phase2_eval.md`.
 - Phase 8 (live mode on a 2026 postseason game).
