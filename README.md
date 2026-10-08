@@ -21,20 +21,22 @@ Every 5 seconds, it looks at what fans in each community said over the last ~20 
 
 ---
 
-## Status and how to run (8 Oct 2026)
+## Status and how to run (8 Oct 2026, evening)
 
 | Phase | State |
 |---|---|
 | 0 Setup, 1 Data | Done. 52,872 cleaned comments across the six threads; reaction lag measured. |
 | 2 Jev client, questions, evaluation | Done against 40 hand-labelled windows and 114 comments (`reports/phase2_eval.md`). Question wording not tuned yet. |
-| 3 Every tick through Jev | **11% done, waiting for OpenRouter credit.** The answers so far are cached. |
-| 4 Moments and summaries | Moments done. One-line summaries need the same credit. |
+| 3 Every tick through Jev | Done: 12,175 readings, 40,354 comments tagged, about $1.27 of Jev calls in 14 minutes. |
+| 4 Moments and summaries | Done: 12 moments, each with a one-line summary per fanbase. |
 | 5 Fanbase report | Done on the baseline (`reports/fanbase_report.html`). |
 | 6 Video sync | Code done; needs `config/anchors.csv` filled in by hand. |
-| 7 Replay dashboard | Done, running on the baseline until the Jev run finishes. |
+| 7 Replay dashboard | Done, on Jev's readings, with the baseline selectable for comparison. |
 | 8 Live mode | Not started. |
 
-**The baseline.** Until Jev has read the whole game, the dashboard runs on a free local stand-in: RoBERTa sentiment per comment, name matching for who a comment is about, and comment-volume spikes for moments. It reads tone only, with no game context, so it scores "LET'S FUCKING GO" as negative and cannot follow "he" or "this guy". The dashboard's "Readings from" menu switches between it and Jev.
+**The baseline.** Alongside Jev there is a free local stand-in: RoBERTa sentiment per comment, name matching for who a comment is about, and comment-volume spikes for moments. It reads tone only, with no game context, so it scores "LET'S FUCKING GO" as negative and cannot follow "he" or "this guy". The dashboard's "Readings from" menu switches between it and Jev, which makes the difference easy to see.
+
+**What a Jev call costs.** To keep a full game near $1.25, each call shows Jev at most 30 of the window's comments and asks it to tag at most 10 new ones per update (sampled evenly across a burst, about 89% of all comments). Subject questions offer only the players in the last fifteen minutes of action or named in the comments, plus "another Dodgers/Blue Jays player". The window's main subject is derived from the comment tags rather than asked. Both caps are in `config/game.yaml`.
 
 **See the dashboard**
 
@@ -44,13 +46,15 @@ C:\Users\91821\.venvs\mlb-fan-live\Scripts\fanpulse-live.exe serve
 
 then open http://localhost:8000. It has its own clock: Play, a speed menu, a scrubber, and buttons that jump between moments.
 
-**Finish the Jev run once the account has credit** (about $3; resumes from the cache, roughly 20 minutes):
+**Re-run Jev** (everything already paid for is cached, so this costs nothing unless the questions or caps change):
 
 ```
 fanpulse-live ticks        # every 5-second update through Jev
 fanpulse-live build        # moments, summaries, dashboard data; Jev becomes the default source
 fanpulse-live evaluate     # refresh the accuracy tables
 ```
+
+**Publish it.** `.github/workflows/pages.yml` deploys the `web/` folder to GitHub Pages on every push. One-time setup: make the repository public, then Settings → Pages → Source: "GitHub Actions".
 
 **Sync the video.** Add one row per half-inning to `config/anchors.csv` with the video time, in seconds, of that half-inning's first pitch (`T1,754` for the top of the 1st), then run `fanpulse-live build`. The dashboard then follows the YouTube player.
 
