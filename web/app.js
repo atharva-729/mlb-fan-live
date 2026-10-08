@@ -298,7 +298,7 @@ function setupVideo() {
   const m = S.manifest;
   S.synced = m.anchors.length > 0;
   $('video-note').textContent = S.synced
-    ? `Video synced from ${m.anchors.length} half-inning anchors: the dashboard follows the player.`
+    ? `Video synced at ${m.anchors.length} points: the dashboard follows the player. Press play on the video.`
     : 'The video is not synced to the dashboard yet, so it plays on its own.';
   if (!S.synced) $('video-note').insertAdjacentHTML('beforeend', ' <a href="anchors.html">Sync it</a>.');
   $('speed').disabled = S.synced;
@@ -313,7 +313,7 @@ function setupVideo() {
   };
   const script = document.createElement('script');
   script.src = 'https://www.youtube.com/iframe_api';
-  script.onerror = () => { $('video-note').textContent = 'Could not reach YouTube. The dashboard clock still works on its own.'; };
+  script.onerror = () => { $('video-note').textContent = 'Could not reach YouTube. The dashboard clock still works on its own.'; S.synced = false; $('speed').disabled = false; };
   document.head.appendChild(script);
 }
 
