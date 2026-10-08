@@ -74,7 +74,8 @@ def test_build_state_for_the_away_fans(timeline):
         '[2]* 3s ago: exactly ↳ replying to: "Relief is cooked"',
     ]
     assert jev_state.new_comment_numbers(comments) == [2]
-    assert state["rosters"]["Dodgers"] == "Al Able, Bo Baker, Dan Dropped, Vic Visitor"
+    assert state["players"]["Dodgers"] == "Al Able, Bo Baker, Dan Dropped, Vic Visitor"
+    assert "another" in state["subject_guide"]
 
 
 def test_state_never_mentions_a_play_that_has_not_ended(timeline):
@@ -96,15 +97,26 @@ def test_subject_options_list_every_player_then_the_rest(timeline):
     ]  # fmt: skip
 
 
+def test_subject_options_for_given_players_add_a_catch_all_per_team(timeline):
+    homer = next(p for p in timeline.players.values() if p.name == "Hal Homer")
+
+    options = questions.subject_options(timeline, [homer])
+
+    assert list(options) == [
+        "Hal Homer", "another Dodgers player", "another Blue Jays player", "Dodgers manager", "Blue Jays manager",
+        "umpire", "Dodgers team", "Blue Jays team", "broadcast", "other",
+    ]  # fmt: skip
+    assert set(options.values()) == {None}
+    assert "another Dodgers player" in questions.subject_guide(timeline)
+
+
 def test_window_questions_skip_mood_for_a_neutral_crowd(timeline):
-    subjects = questions.subject_options(timeline)
+    team = questions.window_questions("Dodgers")
+    neutral = questions.window_questions(None)
 
-    team = questions.window_questions("Dodgers", subjects)
-    neutral = questions.window_questions(None, subjects)
-
-    assert list(team) == ["mood", "target", "emotion", "moment", "blame"]
+    assert list(team) == ["mood", "emotion", "moment", "blame"]
     assert "Dodgers fans" in team["mood"]["instructions"]
-    assert list(neutral) == ["target", "emotion", "moment", "blame"]
+    assert list(neutral) == ["emotion", "moment", "blame"]
     assert team["moment"]["type"] == "noul"
 
 
@@ -115,7 +127,7 @@ def test_question_batches_spill_a_burst_into_extra_calls(timeline):
     burst = questions.question_batches("Dodgers", subjects, list(range(1, 41)))
 
     assert len(quiet) == 1 and "subj_3" in quiet[0] and "sent_4" in quiet[0]
-    assert [len(batch) for batch in burst] == [63, 22]  # 5 window + 29 comments, then 11 comments
+    assert [len(batch) for batch in burst] == [64, 20]  # 4 window + 30 comments, then 10 comments
     assert all(len(batch) <= questions.MAX_QUESTIONS for batch in burst)
     assert "mood" not in burst[1]
 

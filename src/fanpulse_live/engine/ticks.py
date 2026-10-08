@@ -40,11 +40,6 @@ def tick_times(timeline: GameTimeline, update_every_s: int) -> list[datetime]:
     return [start + timedelta(seconds=update_every_s * i) for i in range(count + 1)]
 
 
-def _top(answer: dict, n: int = TOP_CHOICES) -> list[list]:
-    ranked = sorted(answer["probabilities"].items(), key=lambda kv: -kv[1])
-    return [[option, round(p, 3)] for option, p in ranked[:n] if p > 0]
-
-
 @dataclass
 class TickResult:
     window: dict  # one row of the ticks table
@@ -101,14 +96,12 @@ def run_tick(
     if "mood" in answers:
         row["mood"] = questions.score_to_unit(answers["mood"])
         row["mood_confidence"] = answers["mood"]["confidence"]
-    row["target"] = answers["target"]["choice"]
-    row["target_top"] = json.dumps(_top(answers["target"]), ensure_ascii=False)
     row["emotion"] = answers["emotion"]["choice"]
     row["emotion_probs"] = json.dumps(answers["emotion"]["probabilities"])
     row["moment"] = answers["moment"]["noul"]
     row["blame"] = answers["blame"]["noul"]
 
-    ids = list(call.window.comments["comment_id"])
+    ids = list(call.shown["comment_id"])
     for k in call.new_numbers:
         subject, sentiment = answers[f"subj_{k}"], answers[f"sent_{k}"]
         result.comments.append(
@@ -181,7 +174,36 @@ def run_game(
         [row for r in results for row in r.comments],
         columns=["comment_id", "stream", "t", "subject", "subject_confidence", "sentiment", "sentiment_confidence"],
     ).sort_values(["t", "stream"]).reset_index(drop=True)
+    fill_targets(ticks, tags, game_config["tick"]["window_s"])
     return ticks, tags, totals
+
+
+def fill_targets(ticks: pd.DataFrame, tags: pd.DataFrame, window_s: int) -> None:
+    """Set each reading's main subject from the comment tags of its window, in place.
+
+    The subject is the most common one among comments tagged in the last
+    ``window_s`` seconds, ignoring "other"; ``target_top`` keeps the leading
+    few with their share. Asking Jev for this directly cost one more long
+    question per call and said nothing the tags do not.
+    """
+    targets, tops = {}, {}
+    for stream, group in tags.groupby("stream"):
+        group = group[group["subject"] != "other"]
+        times = group["t"].reset_index(drop=True)
+        subjects = group["subject"].to_numpy()
+        for t in ticks.loc[(ticks["stream"] == stream) & ~ticks["stale"] & ~ticks["pending"], "t"]:
+            lo = times.searchsorted(t - pd.Timedelta(seconds=window_s), side="right")
+            hi = times.searchsorted(t, side="right")
+            if hi <= lo:
+                continue
+            counts = pd.Series(subjects[lo:hi]).value_counts()
+            targets[(t, stream)] = counts.index[0]
+            tops[(t, stream)] = json.dumps(
+                [[name, round(n / (hi - lo), 3)] for name, n in counts.head(TOP_CHOICES).items()], ensure_ascii=False
+            )
+    keys = list(zip(ticks["t"], ticks["stream"]))
+    ticks["target"] = [targets.get(key) for key in keys]
+    ticks["target_top"] = [tops.get(key) for key in keys]
 
 
 def volume_buckets(comments: pd.DataFrame, times: list[datetime], update_every_s: int) -> pd.DataFrame:

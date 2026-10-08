@@ -46,3 +46,8 @@ tick:
   # reaction starts 15-30s after a play ends, peaks at 45-75s, and is still
   # 1.5x normal volume at 105s, so 90 would cut off the back of it.
   play_lookback_s: 120
+  # Cost caps for busy moments. Jev is shown at most this many of the window's
+  # comments (the most recent), and tags at most this many new ones per update,
+  # spread evenly across the burst.
+  max_context_comments: 30
+  max_tagged_per_update: 10

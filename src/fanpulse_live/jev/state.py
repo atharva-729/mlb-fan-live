@@ -10,8 +10,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 
-from fanpulse_live.gamestate import GameState, GameTimeline, Play, half_label
+from fanpulse_live.gamestate import GameState, GameTimeline, Play, Player, half_label
 from fanpulse_live.ingest.clean import clean_text
+from fanpulse_live.jev.questions import subject_guide
 
 REPLY_CONTEXT_CHARS = 80
 
@@ -20,7 +21,7 @@ REPLY_CONTEXT_CHARS = 80
 class WindowComment:
     created: datetime
     body: str
-    is_new: bool
+    is_new: bool  # marked * and asked about; in a burst only a sample of the new comments is
     parent_body: str | None = None
 
 
@@ -124,15 +125,13 @@ def render_player_lines(timeline: GameTimeline, t: datetime, state: GameState, l
     return lines
 
 
-def render_rosters(timeline: GameTimeline, nicknames: dict[int, list[str]]) -> dict[str, str]:
-    """Who plays for whom, once per call, so the subject options can be bare names."""
+def render_rosters(timeline: GameTimeline, players: list[Player]) -> dict[str, str]:
+    """Which team each offered player is on, once per call, so the subject options can be bare names."""
     rosters = {}
     for abbr, team in ((timeline.away, timeline.away_name), (timeline.home, timeline.home_name)):
-        names = []
-        for player in sorted((p for p in timeline.players.values() if p.team == abbr), key=lambda p: p.name):
-            also = nicknames.get(player.id)
-            names.append(f"{player.name} (also called {', '.join(also)})" if also else player.name)
-        rosters[team] = ", ".join(names)
+        names = [player.name for player in players if player.team == abbr]
+        if names:
+            rosters[team] = ", ".join(names)
     return rosters
 
 
@@ -164,7 +163,7 @@ def build_state(
     label: str,
     window_s: float,
     play_lookback_s: float,
-    nicknames: dict[int, list[str]] | None = None,
+    players: list[Player] | None = None,
 ) -> dict:
     """The state for one (update, stream) call."""
     state = timeline.at(t)
@@ -175,8 +174,9 @@ def build_state(
         "recent_plays": render_recent_plays(timeline, t, play_lookback_s, stream["team"])
         or [f"No play has ended in the last {play_lookback_s:.0f} seconds."],
         "players_today": render_player_lines(timeline, t, state, play_lookback_s),
-        "rosters": render_rosters(timeline, nicknames or {}),
-        "comments_note": f"Comments from the last {window_s:.0f} seconds, oldest first. "
-        f"A * after the number marks a comment that is new since the last update.",
+        "players": render_rosters(timeline, players if players is not None else list(timeline.players.values())),
+        "subject_guide": subject_guide(timeline),
+        "comments_note": f"Recent comments from the last {window_s:.0f} seconds, oldest first. "
+        f"A * after the number marks a new comment you are asked about.",
         "comments": render_comments(comments, t),
     }

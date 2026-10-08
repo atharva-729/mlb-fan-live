@@ -41,6 +41,14 @@ def user_agent() -> str:
     return os.getenv("FANPULSE_LIVE_USER_AGENT") or DEFAULT_USER_AGENT
 
 
+def load_nicknames() -> dict[str, int]:
+    """Nickname to MLB person id, from ``config/nicknames.yaml``."""
+    path = PROJECT_ROOT / "config" / "nicknames.yaml"
+    if not path.exists():
+        return {}
+    return (yaml.safe_load(path.read_text(encoding="utf-8")) or {}).get("nicknames") or {}
+
+
 def load_game(path: Path | None = None) -> dict[str, Any]:
     """The game, its threads, its streams and the tick settings, from ``config/game.yaml``."""
     return yaml.safe_load((path or GAME_CONFIG_PATH).read_text(encoding="utf-8"))

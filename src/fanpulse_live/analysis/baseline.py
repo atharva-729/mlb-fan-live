@@ -102,6 +102,12 @@ def name_patterns(timeline: GameTimeline, nicknames: dict[str, int] | None = Non
     ]
 
 
+def mentioned_players(text: str, patterns: list[tuple[re.Pattern, str]]) -> set[str]:
+    """Every player a text names."""
+    plain = _plain(text)
+    return {name for pattern, name in patterns if pattern.search(plain)}
+
+
 def mentioned_player(text: str, patterns: list[tuple[re.Pattern, str]]) -> str | None:
     """The player a comment names, taking the earliest mention; None if it names nobody."""
     plain = _plain(text)
