@@ -192,6 +192,27 @@ def source_file(
     return data, (answered / possible if possible else 0.0)
 
 
+def half_innings(timeline: GameTimeline) -> list[dict]:
+    """Each half-inning with what is needed to find it in the video: when its first pitch was
+    thrown, when it ended, and who was batting and pitching at the start."""
+    halves: dict[str, dict] = {}
+    for play in timeline.plays:
+        code = f"{'T' if play.half == 'top' else 'B'}{play.inning}"
+        pitches = [e for e in play.events if e["isPitch"]]
+        if code not in halves and pitches:
+            halves[code] = {
+                "code": code,
+                "inning": play.inning,
+                "half": play.half,
+                "firstPitch": _epoch(pitches[0]["startTime"]),
+                "batter": timeline.name(play.batter_id),
+                "pitcher": timeline.name(play.pitcher_id),
+            }
+        if code in halves:
+            halves[code]["end"] = _epoch(play.end)
+    return list(halves.values())
+
+
 def read_anchors(path: Path, timeline: GameTimeline) -> list[dict]:
     """Hand-entered video anchors matched to the first pitch of their half-inning.
 
@@ -201,13 +222,7 @@ def read_anchors(path: Path, timeline: GameTimeline) -> list[dict]:
     """
     if not path.exists():
         return []
-    first_pitch: dict[str, int] = {}
-    for play in timeline.plays:
-        code = f"{'T' if play.half == 'top' else 'B'}{play.inning}"
-        if code not in first_pitch:
-            pitches = [e for e in play.events if e["isPitch"]]
-            if pitches:
-                first_pitch[code] = _epoch(pitches[0]["startTime"])
+    first_pitch = {h["code"]: h["firstPitch"] for h in half_innings(timeline)}
     anchors = []
     with path.open(encoding="utf-8", newline="") as handle:
         for row in csv.DictReader(handle):
@@ -239,4 +254,5 @@ def manifest(game_config: dict, timeline: GameTimeline, times: list[datetime], s
         ],
         "sources": sources,
         "anchors": anchors,
+        "halfInnings": half_innings(timeline),
     }

@@ -162,3 +162,5 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
 .moment .play { font-weight: 600; }
 .moment .fan { display: flex; gap: 6px; align-items: baseline; color: var(--ink-2); font-size: 13px; }
 .moment .fan .dot { transform: translateY(-1px); }
+
+a { color: var(--accent); }

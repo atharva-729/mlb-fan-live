@@ -299,7 +299,8 @@ function setupVideo() {
   S.synced = m.anchors.length > 0;
   $('video-note').textContent = S.synced
     ? `Video synced from ${m.anchors.length} half-inning anchors: the dashboard follows the player.`
-    : 'The video is not synced to the dashboard yet. It plays on its own until first-pitch times are added to config/anchors.csv.';
+    : 'The video is not synced to the dashboard yet, so it plays on its own.';
+  if (!S.synced) $('video-note').insertAdjacentHTML('beforeend', ' <a href="anchors.html">Sync it</a>.');
   $('speed').disabled = S.synced;
   window.onYouTubeIframeAPIReady = () => {
     S.player = new YT.Player('player', {

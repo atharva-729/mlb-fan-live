@@ -171,6 +171,16 @@ def test_read_anchors_matches_half_innings_to_first_pitches(timeline, tmp_path):
     assert export.read_anchors(tmp_path / "missing.csv", timeline) == []
 
 
+def test_half_innings_say_where_each_one_starts_and_ends(timeline):
+    halves = export.half_innings(timeline)
+
+    assert [h["code"] for h in halves] == ["T1", "B1"]
+    assert halves[0]["batter"] == "Al Able" and halves[0]["pitcher"] == "Sam Starter"
+    assert halves[0]["firstPitch"] == int(parse_time("2025-10-25T00:10:00Z").timestamp())
+    assert halves[0]["end"] == int(parse_time("2025-10-25T00:13:00Z").timestamp())
+    assert halves[1]["batter"] == "Hal Homer"
+
+
 def test_parse_lines_reads_json_inside_a_code_fence():
     reply = 'Here you go:\n```json\n{"Dodgers fans": " Blaming the bullpen. ", "Mets fans": "n/a"}\n```'
 
