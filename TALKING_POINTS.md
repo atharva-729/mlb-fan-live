@@ -51,7 +51,7 @@ Measured cost was about $1.20 for this game, at about half a second per call, af
 
 ## Known gaps
 
+- **The dashboard runs at least 30 seconds behind the video.** Open bug, not yet investigated.
 - In a burst Jev tags a sample of the new comments (up to 10 per community per 5 seconds), so about 11% of comments carry no tags.
-- The video is not synced to the dashboard clock until `config/anchors.csv` is filled in.
 - The moment summaries are written by a small text model from a sample of comments and can get a detail wrong.
 - Live mode (Phase 8) is not built yet.
