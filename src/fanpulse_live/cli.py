@@ -425,7 +425,7 @@ def cmd_state(args: argparse.Namespace) -> int:
     sizes = ", ".join(str(len(batch)) for batch in call.question_batches)
     print(
         f"\n{len(call.window.comments)} comments in a {call.window.window_used_s}s window, "
-        f"{len(call.new_numbers)} new; stale: {call.window.stale}; questions per call: {sizes}"
+        f"{len(call.new_numbers)} tagged; stale: {call.window.stale}; questions per call: {sizes}"
     )
     if not args.ask:
         return 0
@@ -504,8 +504,8 @@ def cmd_evaluate(args: argparse.Namespace) -> int:
 
     from fanpulse_live import config, gamestate, storage
     from fanpulse_live.analysis import evaluate, labelling
-    from fanpulse_live.engine import calls
-    from fanpulse_live.jev import client, questions
+    from fanpulse_live.engine import calls, window
+    from fanpulse_live.jev import client
     from fanpulse_live.viz import charts
 
     directory = config.data_dir() / "labels"
@@ -516,9 +516,42 @@ def cmd_evaluate(args: argparse.Namespace) -> int:
         print(f"missing {exc.filename}; run `label-sheet`, label the page and save labels.json there", file=sys.stderr)
         return 1
 
-    subjects = questions.subject_options(gamestate.load_timeline(config.load_game()["game"]["game_pk"]))
+    loaded = config.load_game()
+    game_pk = loaded["game"]["game_pk"]
+    tables = _load_tables(game_pk, ("comments", "comments_raw"))
+    if tables is None:
+        return 1
+    timeline = gamestate.load_timeline(game_pk)
+    streams = {s["id"]: s for s in loaded["streams"]}
+    parents = window.parent_bodies(tables["comments_raw"])
+    game_threads = tables["comments"][tables["comments"]["thread_type"] == "game"]
+    team_of = {p.name: p.team for p in timeline.players.values()}
+    team_names = {timeline.home: timeline.home_name, timeline.away: timeline.away_name}
+
+    # Rebuild each labelled window as the tick engine now builds it, with the labelled
+    # comments forced into the tagged sample, and put the labels in terms of its options.
     before = client.usage_summary()
-    answers = {item["id"]: evaluate.ask_item(item, subjects) for item in items}
+    answers, comment_ids = {}, {}
+    labels = json.loads(json.dumps(labels))
+    for item in items:
+        in_stream = game_threads[game_threads["stream"] == item["stream"]].sort_values("created_utc")
+        t = gamestate.parse_time(item["time"])
+        tick = loaded["tick"]
+        full = window.select_window(
+            in_stream, t, update_every_s=tick["update_every_s"], window_s=tick["window_s"],
+            min_comments=tick["min_comments"], max_window_s=tick["max_window_s"],
+        )  # fmt: skip
+        page_ids = list(full.comments["comment_id"])
+        labelled = {k: page_ids[k - 1] for k in item["label_comments"]}
+        comment_ids.update({(item["id"], k): comment_id for k, comment_id in labelled.items()})
+        call = calls.prepare_call(
+            timeline, t, streams[item["stream"]], in_stream, parents, None, loaded, must_tag=set(labelled.values())
+        )
+        answers[item["id"]] = evaluate.ask_call(call, labelled)
+        entry = labels[item["id"]]
+        entry["target"] = evaluate.to_offered(entry["target"], call.subjects, team_of, team_names)
+        for label in entry["comments"].values():
+            label["subject"] = evaluate.to_offered(label["subject"], call.subjects, team_of, team_names)
     after = client.usage_summary()
     spent = {
         "calls": after["calls"] - before["calls"],
@@ -530,28 +563,13 @@ def cmd_evaluate(args: argparse.Namespace) -> int:
     tallies = evaluate.compare(items, labels, answers)
     text = evaluate.report(tallies, spent)
 
-    # The RoBERTa baseline, if it has been run: find each labelled comment's id by rebuilding its window.
-    loaded = config.load_game()
-    game_pk = loaded["game"]["game_pk"]
+    # The RoBERTa baseline on the same comments, if it has been run.
     try:
         scores = storage.read_table("comment_scores", game_pk).set_index("comment_id")["sentiment"]
-        comments = storage.read_table("comments", game_pk)
     except FileNotFoundError:
         text += "\n## Jev against the RoBERTa baseline\n\nNot run yet (`fanpulse-live baseline-scores`).\n"
     else:
-        timeline = gamestate.load_timeline(game_pk)
-        streams = {s["id"]: s for s in loaded["streams"]}
-        game_threads = comments[comments["thread_type"] == "game"]
-        baseline_scores = {}
-        for item in items:
-            in_stream = game_threads[game_threads["stream"] == item["stream"]].sort_values("created_utc")
-            call = calls.prepare_call(
-                timeline, gamestate.parse_time(item["time"]), streams[item["stream"]], in_stream, {}, subjects, loaded
-            )
-            ids = list(call.window.comments["comment_id"])
-            for k in item["label_comments"]:
-                if ids[k - 1] in scores.index:
-                    baseline_scores[(item["id"], k)] = float(scores[ids[k - 1]])
+        baseline_scores = {key: float(scores[cid]) for key, cid in comment_ids.items() if cid in scores.index}
         roberta = evaluate.compare_baseline(items, labels, baseline_scores)
         text += "\n" + evaluate.baseline_section(tallies["sentiment"], roberta)
 

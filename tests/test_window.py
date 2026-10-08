@@ -1,6 +1,6 @@
 import pandas as pd
 
-from fanpulse_live.engine import window
+from fanpulse_live.engine import calls, window
 from fanpulse_live.gamestate import parse_time
 
 T = parse_time("2025-10-25T01:00:00Z")
@@ -79,3 +79,41 @@ def test_reply_context_comes_from_the_parent_comment_unless_deleted():
     assert [c.parent_body for c in built] == [None, "Banda is cooked", None, None]
     assert [c.is_new for c in built] == [False, False, True, True]
     assert built[0].created == T - pd.Timedelta(seconds=9)
+
+
+def _window(n_old, n_new):
+    """n_old comments from before the update, then n_new new ones, oldest first."""
+    frame = pd.DataFrame(
+        {
+            "comment_id": [f"old{i}" for i in range(n_old)] + [f"new{i}" for i in range(n_new)],
+            "is_new": [False] * n_old + [True] * n_new,
+        }
+    )
+    return frame
+
+
+def test_a_quiet_window_is_shown_and_tagged_whole():
+    shown = calls.choose_shown(_window(5, 3), max_context=30, max_tagged=8)
+
+    assert len(shown) == 8
+    assert list(shown["comment_id"][shown["is_new"]]) == ["new0", "new1", "new2"]
+
+
+def test_a_burst_is_sampled_evenly_and_shown_with_the_latest_context():
+    shown = calls.choose_shown(_window(60, 25), max_context=30, max_tagged=8)
+    tagged = list(shown["comment_id"][shown["is_new"]])
+
+    assert len(shown) == 30
+    assert len(tagged) == 8
+    assert tagged[0] == "new0" and tagged[-1] == "new24"  # spread across the burst, not only its tail
+    assert list(shown["comment_id"]) == sorted(shown["comment_id"], key=list(_window(60, 25)["comment_id"]).index)
+    # The 30 shown are the most recent: all 25 new comments and the 5 just before them.
+    assert "old55" in set(shown["comment_id"]) and "old54" not in set(shown["comment_id"])
+
+
+def test_labelled_comments_can_be_forced_into_the_tagged_sample():
+    shown = calls.choose_shown(_window(10, 25), max_context=30, max_tagged=8, must_tag={"new3", "old2"})
+    tagged = set(shown["comment_id"][shown["is_new"]])
+
+    assert {"new3", "old2"} <= tagged
+    assert len(tagged) == 8

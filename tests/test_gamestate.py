@@ -90,3 +90,11 @@ def test_half_label():
     assert half_label(1, "top") == "Top 1st"
     assert half_label(2, "bottom") == "Bottom 2nd"
     assert half_label(11, "top") == "Top 11th"
+
+
+def test_recent_players_are_the_matchup_and_the_last_plays(timeline):
+    during_single = parse_time("2025-10-25T00:12:40Z")  # Baker batting against Relief, 100s after the strikeout
+
+    assert timeline.recent_players(during_single, 60) == {2, 11}
+    assert timeline.recent_players(during_single, 900) == {1, 10, 2, 11}
+    assert timeline.recent_players(parse_time("2025-10-25T00:05:00Z"), 900) == set()

@@ -13,6 +13,8 @@ def test_game_config_matches_the_readme():
         "min_comments": 8,
         "max_window_s": 60,
         "play_lookback_s": 120,
+        "max_context_comments": 30,
+        "max_tagged_per_update": 10,
     }
 
 

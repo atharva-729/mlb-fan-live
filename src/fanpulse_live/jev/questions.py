@@ -9,7 +9,7 @@ ordered list of levels, 0 = first level).
 
 from __future__ import annotations
 
-from fanpulse_live.gamestate import GameTimeline
+from fanpulse_live.gamestate import GameTimeline, Player
 
 # The README's budget per call. The API accepted 65 in a test, so this is our
 # cap, not an enforced limit.
@@ -45,36 +45,52 @@ SENTIMENT_LEVELS = [
 SARCASM_NOTE = "Read sarcasm for what it means, not what it literally says."
 
 
-def subject_options(timeline: GameTimeline) -> dict[str, str | None]:
-    """Who a comment can be about: every player on both rosters, then the non-player subjects.
+def subject_options(timeline: GameTimeline, players: list[Player] | None = None) -> dict[str, None]:
+    """Who a comment can be about: players, then the non-player subjects.
 
-    Players are bare names. The option list is repeated in every subject
-    question, so teams and nicknames live once in the state's ``rosters``
-    instead; describing each player here made a call about three times larger.
+    The option list is repeated in every subject question, so it is kept as
+    small as it can be. Options are bare names with no descriptions: what each
+    means is said once, in the state's ``subject_guide``, and teams are in its
+    ``players``. With ``players`` only those are offered, plus a catch-all per
+    team for anyone else on a roster; without it, every player on both rosters.
     """
-    options: dict[str, str | None] = {
-        player.name: None for player in sorted(timeline.players.values(), key=lambda p: (p.team, p.name))
-    }
-    options.update(
-        {
-            f"{timeline.away_name} manager": "The manager or coaches: pitching changes, lineups, in-game decisions.",
-            f"{timeline.home_name} manager": "The manager or coaches: pitching changes, lineups, in-game decisions.",
-            "umpire": "The umpires or a specific call.",
-            f"{timeline.away_name} team": "The team as a whole, its bullpen or its offense, not one player.",
-            f"{timeline.home_name} team": "The team as a whole, its bullpen or its offense, not one player.",
-            "broadcast": "The announcers, the TV broadcast, ads or the stream.",
-            "other": "Anything else: general chatter, other teams, the fans themselves, or unclear.",
-        }
+    if players is None:
+        players = sorted(timeline.players.values(), key=lambda p: (p.team, p.name))
+        catch_alls = []
+    else:
+        catch_alls = [f"another {timeline.away_name} player", f"another {timeline.home_name} player"]
+    names = [player.name for player in players] + catch_alls + [
+        f"{timeline.away_name} manager",
+        f"{timeline.home_name} manager",
+        "umpire",
+        f"{timeline.away_name} team",
+        f"{timeline.home_name} team",
+        "broadcast",
+        "other",
+    ]
+    return dict.fromkeys(names)
+
+
+def subject_guide(timeline: GameTimeline) -> str:
+    """What the subject options mean, said once per call instead of inside every question."""
+    return (
+        "For questions asking who or what a comment is about: choose a listed player if the comment is about him, "
+        "using the recent plays and any reply context to work out who 'he' or 'this guy' means. Choose 'another "
+        f"{timeline.away_name} player' or 'another {timeline.home_name} player' for a player who is not listed. "
+        "Choose a team's 'manager' for the manager or coaches: pitching changes, lineups, in-game decisions. Choose "
+        "'umpire' for the umpires or a specific call. Choose a 'team' for the team as a whole, its bullpen or its "
+        "offense rather than one player. Choose 'broadcast' for the announcers, the TV broadcast, ads or the stream. "
+        "Choose 'other' for anything else: general chatter, other teams, the fans themselves, or unclear."
     )
-    return options
 
 
-def window_questions(team_name: str | None, subjects: dict[str, str | None]) -> dict[str, dict]:
+def window_questions(team_name: str | None) -> dict[str, dict]:
     """The questions answered about the whole window.
 
     ``team_name`` is None for a neutral crowd, which gets no mood question:
     mood is a fanbase's feeling about its own team, and these commenters have
-    no team in the game.
+    no team in the game. The window's main subject is not asked: it is the
+    most common subject among the comment tags, which costs nothing.
     """
     mood = {}
     if team_name:
@@ -86,11 +102,6 @@ def window_questions(team_name: str | None, subjects: dict[str, str | None]) -> 
         }
     return {
         **mood,
-        "target": {
-            "type": "choice",
-            "instructions": "Who or what are most of the comments about?",
-            "criteria": subjects,
-        },
         "emotion": {
             "type": "choice",
             "instructions": "What is the dominant emotion across the comments?",
@@ -120,8 +131,7 @@ def comment_questions(k: int, subjects: dict[str, str | None]) -> dict[str, dict
     return {
         f"subj_{k}": {
             "type": "choice",
-            "instructions": f"Who or what is comment [{k}] mainly about? Use the recent plays and any reply "
-            f"context to work out who 'he' or 'this guy' means.",
+            "instructions": f"Who or what is comment [{k}] mainly about?",
             "criteria": subjects,
         },
         f"sent_{k}": {
@@ -141,7 +151,7 @@ def question_batches(
     The first call carries the window questions plus as many new comments as
     fit; a burst of new comments spills into extra calls.
     """
-    batches = [window_questions(team_name, subjects)]
+    batches = [window_questions(team_name)]
     for k in new_comments:
         if len(batches[-1]) + QUESTIONS_PER_COMMENT > MAX_QUESTIONS:
             batches.append({})

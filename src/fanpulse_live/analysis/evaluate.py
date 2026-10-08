@@ -11,13 +11,38 @@ NEW_COMMENT = re.compile(r"^\[(\d+)\]\*")
 TEAM_NAMES = {"LAD": "Dodgers", "TOR": "Blue Jays"}
 
 
-def ask_item(item: dict, subjects: dict[str, str | None]) -> dict[str, dict]:
-    """Jev's answers for one sampled window, asked exactly as the tick engine would ask."""
-    new_numbers = [int(m.group(1)) for text in item["state"]["comments"] if (m := NEW_COMMENT.match(text))]
+def ask_call(call, labelled: dict[int, str]) -> dict[str, dict]:
+    """Jev's answers for one labelled window, asked exactly as the tick engine asks.
+
+    ``call`` is the prepared call for the window, built with the labelled
+    comments forced into its tagged sample. ``labelled`` maps each labelled
+    comment's number on the labelling page to its comment id. The answers come
+    back keyed by those page numbers, with the window's main subject derived
+    from the comment tags the way the tick engine derives it.
+    """
     answers: dict[str, dict] = {}
-    for batch in questions.question_batches(TEAM_NAMES.get(item["team"]), subjects, new_numbers):
-        answers.update(client.ask(item["state"], batch)["answers"])
-    return answers
+    for batch in call.question_batches:
+        answers.update(client.ask(call.state, batch)["answers"])
+
+    shown_ids = list(call.shown["comment_id"])
+    out = {name: answer for name, answer in answers.items() if not name.startswith(("subj_", "sent_"))}
+    for page_number, comment_id in labelled.items():
+        k = shown_ids.index(comment_id) + 1
+        out[f"subj_{page_number}"] = answers[f"subj_{k}"]
+        out[f"sent_{page_number}"] = answers[f"sent_{k}"]
+
+    choices = [answers[f"subj_{k}"]["choice"] for k in call.new_numbers]
+    named = [c for c in choices if c != "other"] or ["other"]
+    shares = {name: named.count(name) / len(named) for name in dict.fromkeys(named)}
+    out["target"] = {"choice": max(shares, key=shares.get), "probabilities": shares}
+    return out
+
+
+def to_offered(subject: str, options: dict, team_of: dict[str, str], team_names: dict[str, str]) -> str:
+    """A hand label as Jev could have given it: a player not on the list becomes "another <team> player"."""
+    if subject in options or subject not in team_of:
+        return subject
+    return f"another {team_names[team_of[subject]]} player"
 
 
 def level(answer: dict) -> int:
@@ -162,10 +187,10 @@ def report(tallies: dict[str, Tally], usage: dict[str, float]) -> str:
     lines += [
         f"| window mood (5 levels) | {len(mood)} | {mood.rate('exact'):.0%} | {mood.rate('within_one'):.0%} within one level "
         f"| same side (neg/neutral/pos) {mood.rate('same_side'):.0%}; mean error {mood.mean('error'):.2f} levels |",
-        f"| window main subject (59 options) | {len(tallies['target'])} | {tallies['target'].rate('exact'):.0%} "
+        f"| window main subject (from the comment tags) | {len(tallies['target'])} | {tallies['target'].rate('exact'):.0%} "
         f"| {tallies['target'].rate('top3'):.0%} in Jev's top 3 | |",
         f"| window moment (yes/no) | {len(tallies['moment'])} | {tallies['moment'].rate('exact'):.0%} | | threshold P >= 0.5 |",
-        f"| comment subject (59 options) | {len(tallies['subject'])} | {tallies['subject'].rate('exact'):.0%} "
+        f"| comment subject | {len(tallies['subject'])} | {tallies['subject'].rate('exact'):.0%} "
         f"| {tallies['subject'].rate('top3'):.0%} in Jev's top 3 | |",
         f"| comment sentiment (5 levels) | {len(sentiment)} | {sentiment.rate('exact'):.0%} "
         f"| {sentiment.rate('within_one'):.0%} within one level "

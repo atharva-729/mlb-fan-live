@@ -84,10 +84,14 @@ class GameTimeline:
 
         names = {p["id"]: p["fullName"] for p in game["players"].values()}
         self.players: dict[int, Player] = {}
+        # The starting nine on each side, known before first pitch: a batting order ending in 00.
+        self.starters: set[int] = set()
         for side, abbr in (("home", self.home), ("away", self.away)):
             for entry in feed["liveData"]["boxscore"]["teams"][side]["players"].values():
                 player_id = entry["person"]["id"]
                 self.players[player_id] = Player(player_id, names.get(player_id, entry["person"]["fullName"]), abbr)
+                if str(entry.get("battingOrder", "")).endswith("00"):
+                    self.starters.add(player_id)
         self._ids_by_name = {p.name: p.id for p in self.players.values()}
 
         wp = {entry["atBatIndex"]: entry for entry in win_probability}
@@ -226,6 +230,17 @@ class GameTimeline:
             "in_play", play.inning, play.half, outs, balls, strikes, home_score, away_score,
             previous.runners_after if previous else {}, batter, pitcher, play.home_wp_before,
         )  # fmt: skip
+
+    def recent_players(self, t: datetime, lookback_s: float) -> set[int]:
+        """Ids of the players in the action around ``t``: the current matchup and every batter and
+        pitcher of a play that ended in the last ``lookback_s`` seconds.
+
+        Nothing later than ``t`` is used, so a substitute shows up only once he is announced.
+        """
+        ids = {i for play in self.recent_plays(t, lookback_s) for i in (play.batter_id, play.pitcher_id)}
+        now = self.at(t)
+        ids.update(i for i in (now.batter_id, now.pitcher_id) if i)
+        return ids
 
     def batting_line(self, player_id: int, t: datetime) -> str | None:
         """Today's line as a batter up to ``t``, like ``1-for-3, HR, 2 RBI``."""
