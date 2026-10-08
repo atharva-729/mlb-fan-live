@@ -41,7 +41,7 @@ What got done and when. Times are local (IST). Newest entries at the bottom.
 | ~20:00 | New OpenRouter key in place. Budget set at $2 for the full Jev run. |
 | 20:27 | Jev calls made about half the size: at most 30 comments shown and 10 tagged per update, subject list cut from 59 options to about 19, main subject derived from tags. Estimate $1.27 from 30 calibration calls; accuracy against the labels unchanged. |
 | 20:29 | Full Jev run started. Stopped at 20:33 on a provider "system overloaded" error; client changed to retry it; resumed 20:34. |
-| 20:43 | Full Jev run complete: 12,175 readings, 40,354 comments tagged, 14 minutes of run time. Jev spend for the run about $1.27 by the local log (OpenRouter's key page showed $1.10 shortly after). |
+| 20:43 | Full Jev run complete: 12,175 readings, 40,354 comments tagged, 14 minutes of run time. Jev spend: $1.15 on the key in total by OpenRouter's count (run, test calls and summaries); the local log adds up to $1.27. |
 | 20:46 | Dashboard rebuilt on Jev: 12 moments, each with one-line fanbase summaries. Jev is now the default source. |
 
 ## How long things took
@@ -54,7 +54,7 @@ What got done and when. Times are local (IST). Newest entries at the bottom.
 | Jev client, questions, state builder | about 40 min |
 | Labelling page | about 20 min to build, 1 hour to label |
 | Evaluation against labels | about 5 min |
-| Tick engine | about 10 min to write; the full run took 14 min and about $1.27 after the call format was slimmed |
+| Tick engine | about 10 min to write; the full run took 14 min and about $1.20 after the call format was slimmed |
 | RoBERTa baseline | 31.5 min of CPU time |
 | Moments, export, dashboard, fanbase report | about 1 hour 40 min |
 

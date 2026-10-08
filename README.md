@@ -27,7 +27,7 @@ Every 5 seconds, it looks at what fans in each community said over the last ~20 
 |---|---|
 | 0 Setup, 1 Data | Done. 52,872 cleaned comments across the six threads; reaction lag measured. |
 | 2 Jev client, questions, evaluation | Done against 40 hand-labelled windows and 114 comments (`reports/phase2_eval.md`). Question wording not tuned yet. |
-| 3 Every tick through Jev | Done: 12,175 readings, 40,354 comments tagged, about $1.27 of Jev calls in 14 minutes. |
+| 3 Every tick through Jev | Done: 12,175 readings, 40,354 comments tagged, about $1.20 of Jev calls in 14 minutes. |
 | 4 Moments and summaries | Done: 12 moments, each with a one-line summary per fanbase. |
 | 5 Fanbase report | Done on the baseline (`reports/fanbase_report.html`). |
 | 6 Video sync | Code done; needs `config/anchors.csv` filled in by hand. |
@@ -36,7 +36,7 @@ Every 5 seconds, it looks at what fans in each community said over the last ~20 
 
 **The baseline.** Alongside Jev there is a free local stand-in: RoBERTa sentiment per comment, name matching for who a comment is about, and comment-volume spikes for moments. It reads tone only, with no game context, so it scores "LET'S FUCKING GO" as negative and cannot follow "he" or "this guy". The dashboard's "Readings from" menu switches between it and Jev, which makes the difference easy to see.
 
-**What a Jev call costs.** To keep a full game near $1.25, each call shows Jev at most 30 of the window's comments and asks it to tag at most 10 new ones per update (sampled evenly across a burst, about 89% of all comments). Subject questions offer only the players in the last fifteen minutes of action or named in the comments, plus "another Dodgers/Blue Jays player". The window's main subject is derived from the comment tags rather than asked. Both caps are in `config/game.yaml`.
+**What a Jev call costs.** To keep a full game near $1.20, each call shows Jev at most 30 of the window's comments and asks it to tag at most 10 new ones per update (sampled evenly across a burst, about 89% of all comments). Subject questions offer only the players in the last fifteen minutes of action or named in the comments, plus "another Dodgers/Blue Jays player". The window's main subject is derived from the comment tags rather than asked. Both caps are in `config/game.yaml`.
 
 **See the dashboard**
 
