@@ -20,6 +20,7 @@ import hashlib
 import json
 import logging
 import os
+import random
 import threading
 import time
 from pathlib import Path
@@ -35,9 +36,13 @@ DECISIONS_URL = "https://openrouter.ai/api/alpha/decisions"
 DEFAULT_MODEL = "typesafe/jev-1.13"
 
 TIMEOUT_SECONDS = 30
-MAX_RETRIES = 5
-BACKOFF_SECONDS = 1.0
-RETRY_STATUSES = {408, 429, 500, 502, 503, 504}
+# The provider sheds load with 529 "system overloaded" for stretches of a minute or
+# more, so retries are patient: 2s, 4s, 8s, 16s, then 30s a time, each jittered so
+# the parallel workers do not all come back at once.
+MAX_RETRIES = 10
+BACKOFF_SECONDS = 2.0
+MAX_BACKOFF_SECONDS = 30.0
+RETRY_STATUSES = {408, 429, 500, 502, 503, 504, 520, 522, 524, 529}
 
 _session: requests.Session | None = None
 _usage_lock = threading.Lock()
@@ -153,8 +158,8 @@ def ask(
                 raise JevError(f"Jev call failed: {last_error}")
 
         if attempt < MAX_RETRIES - 1:
-            delay = BACKOFF_SECONDS * 2**attempt
-            log.warning("Jev call: %s, retrying in %.1fs", last_error, delay)
+            delay = min(BACKOFF_SECONDS * 2**attempt, MAX_BACKOFF_SECONDS) * random.uniform(0.5, 1.5)
+            log.warning("Jev call: %s, retrying in %.1fs", last_error[:120], delay)
             time.sleep(delay)
 
     raise JevError(f"Jev call failed after {MAX_RETRIES} attempts: {last_error}")

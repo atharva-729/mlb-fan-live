@@ -197,9 +197,9 @@ def test_ask_keys_the_cache_on_state_and_questions(jev_env):
 
 
 def test_ask_retries_rate_limits_but_not_bad_requests(jev_env):
-    retried = FakeSession([FakeResponse(429, {"error": "slow down"}), FakeResponse(200, ANSWER)])
+    retried = FakeSession([FakeResponse(529, {"error": "system_overloaded"}), FakeResponse(200, ANSWER)])
     assert client.ask({"a": 1}, QUESTION, session=retried)["answers"] == ANSWER["answers"]
-    assert jev_env == [client.BACKOFF_SECONDS]
+    assert len(jev_env) == 1 and 0.5 * client.BACKOFF_SECONDS <= jev_env[0] <= 1.5 * client.BACKOFF_SECONDS
 
     rejected = FakeSession([FakeResponse(400, {"error": "bad question"})])
     with pytest.raises(client.JevError, match="400"):
