@@ -729,6 +729,8 @@ def cmd_build(args: argparse.Namespace) -> int:
     # The fullest source is the default; Jev wins a tie.
     sources.sort(key=lambda s: (-round(s["coverage"], 2), s["id"] != "jev"))
     anchors = export.read_anchors(config.PROJECT_ROOT / "config" / "anchors.csv", timeline)
+    for problem in export.check_anchors(anchors):
+        print(f"anchor warning: {problem}")
     export._write(out / "manifest.json", export.manifest(loaded, timeline, times, sources, anchors))
     print(f"default source: {sources[0]['id']}; video anchors: {len(anchors)}")
     print(f"Dashboard data written to {out}")

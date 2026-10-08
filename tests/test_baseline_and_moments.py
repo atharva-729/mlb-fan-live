@@ -187,3 +187,24 @@ def test_parse_lines_reads_json_inside_a_code_fence():
     assert summarize.parse_lines(reply) == {"Dodgers fans": "Blaming the bullpen."}
     with pytest.raises(ValueError):
         summarize.parse_lines("no json here")
+
+
+def test_sync_points_add_a_mid_inning_pitching_change(timeline):
+    points = export.sync_points(timeline)
+
+    assert [p["code"] for p in points] == ["T1", "T1P1", "B1"]
+    change = points[1]
+    assert change["what"] == "Rex Relief's first pitch" and change["batter"] == "Bo Baker"
+    assert change["wall"] == int(parse_time("2025-10-25T00:12:30Z").timestamp())
+
+
+def test_anchors_can_use_pitching_change_points_and_are_checked(timeline, tmp_path):
+    path = tmp_path / "anchors.csv"
+    path.write_text("half_inning,video_seconds,note\nT1,100,\nT1P1,200,\nB1,900,\n", encoding="utf-8")
+
+    anchors = export.read_anchors(path, timeline)
+
+    assert [a["half"] for a in anchors] == ["T1", "T1P1", "B1"]
+    # T1P1 to B1 is 450s of game; 700s of video cannot fit in it.
+    assert export.check_anchors(anchors) == ["T1P1 to B1: 700s of video for 450s of game, so one of the two is misplaced"]
+    assert export.check_anchors(anchors[:2]) == []

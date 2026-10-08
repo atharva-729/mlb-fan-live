@@ -1,1 +1,21 @@
 half_inning,video_seconds,note
+T1,529.3,Top of the 1st
+B1,880.3,Bottom of the 1st
+T2,1689.7,Top of the 2nd
+B2,2482.2,Bottom of the 2nd
+T3,2832.3,Top of the 3rd
+B3,3506.3,Bottom of the 3rd
+T4,3787,Top of the 4th
+B4,4035.7,Bottom of the 4th
+T5,4478.2,Top of the 5th
+T5P1,4902,Top of the 5th: Seranthony Dominguez's first pitch (estimated)
+B5,4934.4,Bottom of the 5th
+T6,5258,Top of the 6th (estimated)
+B6,5531.9,Bottom of the 6th (was marked as Top of the 6th; its timing fits the bottom)
+B6P1,6037,Bottom of the 6th: Emmet Sheehan's first pitch (estimated)
+B6P2,6629,Bottom of the 6th: Anthony Banda's first pitch (estimated)
+T7,7037.2,Top of the 7th
+B7,7548.5,Bottom of the 7th
+T8,7824.3,Top of the 8th
+B8,8320.5,Bottom of the 8th
+T9,8680.5,Top of the 9th

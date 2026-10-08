@@ -17,7 +17,7 @@
     .controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
     button.mark { background: var(--accent); border-color: var(--accent); color: #fff; font-size: 16px; font-weight: 600; padding: 10px 18px; }
     .rows { display: grid; gap: 2px; max-height: 560px; overflow-y: auto; }
-    .row { display: grid; grid-template-columns: 74px minmax(0, 1fr) auto; gap: 8px; align-items: center; padding: 5px 6px; border: 1px solid transparent; border-radius: 6px; }
+    .row { display: grid; grid-template-columns: 84px minmax(0, 1fr) auto; gap: 8px; align-items: center; padding: 5px 6px; border: 1px solid transparent; border-radius: 6px; }
     .row.current { border-color: var(--accent); }
     .row .code { font-weight: 600; }
     .row .time { font-variant-numeric: tabular-nums; color: var(--ink-2); }
@@ -30,17 +30,18 @@
 </head>
 <body>
   <header class="top">
-    <div class="brand"><h1>Sync the video</h1><span class="muted">Mark the first pitch of each half-inning</span></div>
+    <div class="brand"><h1>Sync the video</h1><span class="muted">Mark the first pitch after each break</span></div>
     <a href="index.html">Back to the dashboard</a>
   </header>
 
   <div class="wrap">
     <div class="card">
       <ol class="steps">
-        <li>Play the video. When the pitcher throws the <b>first pitch</b> of the highlighted half-inning, press <b>Mark first pitch</b> (or the <kbd>M</kbd> key). It moves on to the next half-inning.</li>
-        <li><b>Jump near the next one</b> skips to roughly where the next half-inning starts, so you don't have to watch the whole game.</li>
+        <li>The video cuts every break: between half-innings and at mid-inning pitching changes. Each row is the <b>first pitch after a break</b>. Play the video, and when the pitcher throws the highlighted one, press <b>Mark first pitch</b> (or the <kbd>M</kbd> key). It moves on to the next.</li>
+        <li><b>Jump near the next one</b> skips to roughly where the next one is, so you don't have to watch the whole game.</li>
+        <li>Rows marked <b>estimated</b> were worked out from the marks around them. Press <b>Go</b> on one, watch for the pitch, and re-mark it if it is off.</li>
         <li>Missed it by a bit? Use <b>−1s</b> / <b>+1s</b> on that row, or <b>Go</b> to replay from the marked time and check.</li>
-        <li>When you have as many as you want (all 17 is best, a few still helps), press <b>Download anchors.csv</b> and save it over <code>config/anchors.csv</code> in the project.</li>
+        <li>When you have as many as you want (all of them is best, a few still helps), press <b>Download anchors.csv</b> and save it over <code>config/anchors.csv</code> in the project.</li>
       </ol>
     </div>
 
@@ -67,7 +68,7 @@
       </div>
 
       <div class="card">
-        <h2>Half-innings <span class="muted" id="count"></span></h2>
+        <h2>First pitch after each break <span class="muted" id="count"></span></h2>
         <div class="rows" id="rows"></div>
         <div class="controls" style="margin-top:12px">
           <button class="primary" id="download">Download anchors.csv</button>
@@ -79,13 +80,20 @@
 
 <script>
 'use strict';
-const KEY = 'fanpulse-anchors-v1';
-let halves = [], marks = {}, current = 0, player = null;
+const KEY = 'fanpulse-anchors-v2';
+let halves = [], marks = {}, estimated = {}, current = 0, player = null;
 try { marks = JSON.parse(localStorage.getItem(KEY) || '{}'); } catch (e) { marks = {}; }
 const $ = id => document.getElementById(id);
 const save = () => { try { localStorage.setItem(KEY, JSON.stringify(marks)); } catch (e) {} };
 
-function label(h) { return `${h.half === 'top' ? 'Top' : 'Bottom'} of the ${ordinal(h.inning)}`; }
+function label(h) {
+  const half = `${h.half === 'top' ? 'Top' : 'Bottom'} of the ${ordinal(h.inning)}`;
+  return h.kind === 'half' ? half : `${half}: ${h.what}`;
+}
+function shortLabel(h) {
+  const half = `${h.half === 'top' ? 'Top' : 'Bot'} ${ordinal(h.inning)}`;
+  return h.kind === 'half' ? half : `${half} +P`;
+}
 function ordinal(n) { return n + (n % 100 >= 11 && n % 100 <= 13 ? 'th' : ({1: 'st', 2: 'nd', 3: 'rd'}[n % 10] || 'th')); }
 function clock(seconds) {
   const s = Math.max(0, Math.round(seconds)), h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60);
@@ -97,14 +105,14 @@ function seekTo(seconds) { if (player && player.seekTo) player.seekTo(Math.max(0
 function render() {
   const h = halves[current];
   $('which').textContent = h ? label(h) : 'All done';
-  $('who').textContent = h ? `First batter: ${h.batter}. Pitching: ${h.pitcher}.` : 'Download the file below.';
+  $('who').textContent = h ? `Batting: ${h.batter}. Pitching: ${h.pitcher}.` : 'Download the file below.';
   const set = halves.filter(x => marks[x.code] !== undefined).length;
   $('count').textContent = `${set} of ${halves.length} marked`;
   $('rows').innerHTML = halves.map((x, i) => {
     const t = marks[x.code];
     return `<div class="row${i === current ? ' current' : ''}" data-i="${i}">
-      <span class="code">${x.half === 'top' ? 'Top' : 'Bot'} ${ordinal(x.inning)}</span>
-      <span class="time${t !== undefined ? ' set' : ''}">${t !== undefined ? `${clock(t)} <span class="muted">(${t}s)</span>` : `<span class="muted">${x.batter} vs ${x.pitcher}</span>`}</span>
+      <span class="code" title="${x.kind === 'half' ? 'Start of the half-inning' : x.what + ' (mid-inning pitching change)'}">${shortLabel(x)}</span>
+      <span class="time${t !== undefined ? ' set' : ''}">${t !== undefined ? `${clock(t)} <span class="muted">(${t}s)${estimated[x.code] ? ' estimated' : ''}</span>` : `<span class="muted">${x.batter} vs ${x.pitcher}</span>`}</span>
       <span class="acts">${t !== undefined
         ? `<button data-act="go">Go</button><button data-act="minus">−1s</button><button data-act="plus">+1s</button><button data-act="clear">Clear</button>`
         : `<button data-act="select">Select</button>`}</span>
@@ -118,6 +126,7 @@ function mark() {
   const h = halves[current];
   if (!h) return;
   marks[h.code] = Math.round(videoTime() * 10) / 10;
+  delete estimated[h.code];
   save();
   const next = halves.findIndex((x, i) => i > current && marks[x.code] === undefined);
   current = next >= 0 ? next : halves.findIndex(x => marks[x.code] === undefined);
@@ -125,17 +134,14 @@ function mark() {
   render();
 }
 
-/** Where the highlighted half-inning probably starts: the last marked one's start plus how long it lasted. */
+/** Where the highlighted point probably is: the last marked one, plus the game time since, less a typical cut per break. */
+const TYPICAL_CUT = 150;
 function jumpNear() {
   const h = halves[current];
   if (!h) return;
   for (let i = current - 1; i >= 0; i--) {
-    const before = halves[i];
-    if (marks[before.code] !== undefined) {
-      // Everything between two marked points that was played is in the video; only the breaks are cut.
-      let played = 0;
-      for (let k = i; k < current; k++) played += halves[k].end - halves[k].firstPitch;
-      seekTo(marks[before.code] + played - 5);
+    if (marks[halves[i].code] !== undefined) {
+      seekTo(marks[halves[i].code] + (h.wall - halves[i].wall) - TYPICAL_CUT * (current - i) - 5);
       return;
     }
   }
@@ -153,13 +159,14 @@ $('rows').onclick = e => {
   if (act === 'go') seekTo(marks[code] - 3);
   if (act === 'minus') marks[code] = Math.round((marks[code] - 1) * 10) / 10;
   if (act === 'plus') marks[code] = Math.round((marks[code] + 1) * 10) / 10;
+  if (act === 'minus' || act === 'plus' || act === 'clear') delete estimated[code];
   if (act === 'clear') { delete marks[code]; current = i; }
   save(); render();
 };
-$('clear').onclick = () => { marks = {}; current = 0; save(); render(); };
+$('clear').onclick = () => { marks = {}; estimated = {}; current = 0; save(); render(); };
 $('download').onclick = () => {
   const lines = ['half_inning,video_seconds,note'];
-  for (const h of halves) if (marks[h.code] !== undefined) lines.push(`${h.code},${marks[h.code]},${label(h)}`);
+  for (const h of halves) if (marks[h.code] !== undefined) lines.push(`${h.code},${marks[h.code]},${label(h).replace(/,/g, '')}${estimated[h.code] ? ' (estimated)' : ''}`);
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob([lines.join('\n') + '\n'], {type: 'text/csv'}));
   a.download = 'anchors.csv';
@@ -168,9 +175,9 @@ $('download').onclick = () => {
 setInterval(() => { $('vtime').textContent = `video ${clock(videoTime())}`; }, 250);
 
 fetch('data/manifest.json', {cache: 'no-cache'}).then(r => r.json()).then(m => {
-  halves = m.halfInnings;
+  halves = m.syncPoints;
   // Start from anchors already saved in the project, unless this browser has newer marks.
-  if (!Object.keys(marks).length) for (const a of m.anchors) marks[a.half] = a.video;
+  if (!Object.keys(marks).length) for (const a of m.anchors) { marks[a.half] = a.video; if (a.estimated) estimated[a.half] = true; }
   current = halves.findIndex(h => marks[h.code] === undefined);
   if (current < 0) current = halves.length;
   render();

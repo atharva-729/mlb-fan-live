@@ -193,8 +193,7 @@ def source_file(
 
 
 def half_innings(timeline: GameTimeline) -> list[dict]:
-    """Each half-inning with what is needed to find it in the video: when its first pitch was
-    thrown, when it ended, and who was batting and pitching at the start."""
+    """Each half-inning: when its first pitch was thrown, when it ended, and the first matchup."""
     halves: dict[str, dict] = {}
     for play in timeline.plays:
         code = f"{'T' if play.half == 'top' else 'B'}{play.inning}"
@@ -213,23 +212,86 @@ def half_innings(timeline: GameTimeline) -> list[dict]:
     return list(halves.values())
 
 
-def read_anchors(path: Path, timeline: GameTimeline) -> list[dict]:
-    """Hand-entered video anchors matched to the first pitch of their half-inning.
+def sync_points(timeline: GameTimeline) -> list[dict]:
+    """The moments a game video can be lined up on, in time order.
 
-    Each row of ``anchors.csv`` gives the video time of a half-inning's first
-    pitch ("T1", "B6"). Returns ``[{video, wall}]`` in video order; an empty
-    list means the video is not synced yet.
+    A full-game video cuts the breaks, and the game clock keeps running
+    through them, so the video has to be re-anchored after every cut. Breaks
+    come between half-innings and at mid-inning pitching changes. Each point
+    is the first pitch after one: of a half-inning ("T1", "B6") or by a
+    reliever brought in mid-inning ("B6P1", "B6P2").
+    """
+    points = [
+        {
+            "code": h["code"], "kind": "half", "inning": h["inning"], "half": h["half"], "wall": h["firstPitch"],
+            "what": "first pitch of the half-inning", "batter": h["batter"], "pitcher": h["pitcher"],
+        }
+        for h in half_innings(timeline)
+    ]  # fmt: skip
+    starts = {p["code"]: p["wall"] for p in points}
+    counts: dict[str, int] = {}
+    for play in timeline.plays:
+        code = f"{'T' if play.half == 'top' else 'B'}{play.inning}"
+        changed = False
+        for event in play.events:
+            if event["details"].get("eventType") == "pitching_substitution":
+                changed = True
+            elif event["isPitch"] and changed:
+                changed = False
+                wall = _epoch(event["startTime"])
+                if wall <= starts.get(code, wall):
+                    continue  # brought in to start the half-inning: that is the half-inning's own point
+                counts[code] = counts.get(code, 0) + 1
+                points.append(
+                    {
+                        "code": f"{code}P{counts[code]}", "kind": "pitching change", "inning": play.inning,
+                        "half": play.half, "wall": wall, "what": f"{timeline.name(play.pitcher_id)}'s first pitch",
+                        "batter": timeline.name(play.batter_id), "pitcher": timeline.name(play.pitcher_id),
+                    }
+                )  # fmt: skip
+    return sorted(points, key=lambda p: p["wall"])
+
+
+def read_anchors(path: Path, timeline: GameTimeline) -> list[dict]:
+    """Hand-entered video anchors matched to the game clock.
+
+    Each row of ``anchors.csv`` gives the video time of a sync point (see
+    ``sync_points``). Returns ``[{video, wall, half}]`` in video order; an
+    empty list means the video is not synced yet.
     """
     if not path.exists():
         return []
-    first_pitch = {h["code"]: h["firstPitch"] for h in half_innings(timeline)}
+    walls = {p["code"]: p["wall"] for p in sync_points(timeline)}
     anchors = []
     with path.open(encoding="utf-8", newline="") as handle:
         for row in csv.DictReader(handle):
             code = (row.get("half_inning") or "").strip().upper()
-            if code in first_pitch and (row.get("video_seconds") or "").strip():
-                anchors.append({"video": float(row["video_seconds"]), "wall": first_pitch[code], "half": code})
+            if code in walls and (row.get("video_seconds") or "").strip():
+                anchors.append(
+                    {
+                        "video": float(row["video_seconds"]),
+                        "wall": walls[code],
+                        "half": code,
+                        # Worked out from neighbouring marks rather than watched; worth checking by eye.
+                        "estimated": "estimated" in (row.get("note") or "").lower(),
+                    }
+                )
     return sorted(anchors, key=lambda a: a["video"])
+
+
+def check_anchors(anchors: list[dict]) -> list[str]:
+    """Problems with a set of anchors: video time must rise with game time, and never faster than it."""
+    problems = []
+    by_wall = sorted(anchors, key=lambda a: a["wall"])
+    for before, after in zip(by_wall, by_wall[1:]):
+        video, real = after["video"] - before["video"], after["wall"] - before["wall"]
+        if video <= 0:
+            problems.append(f"{after['half']} is marked earlier in the video than {before['half']}")
+        elif video > real + 5:
+            problems.append(
+                f"{before['half']} to {after['half']}: {video:.0f}s of video for {real}s of game, so one of the two is misplaced"
+            )
+    return problems
 
 
 def manifest(game_config: dict, timeline: GameTimeline, times: list[datetime], sources: list[dict], anchors: list[dict]) -> dict:
@@ -254,5 +316,5 @@ def manifest(game_config: dict, timeline: GameTimeline, times: list[datetime], s
         ],
         "sources": sources,
         "anchors": anchors,
-        "halfInnings": half_innings(timeline),
+        "syncPoints": sync_points(timeline),
     }
